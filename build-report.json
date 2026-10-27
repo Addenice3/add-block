@@ -1,0 +1,155 @@
+{
+  "extensionVersion": "0.1.0",
+  "lists": [
+    {
+      "id": "easylist",
+      "title": "EasyList",
+      "version": "202610270115",
+      "sha256": "f9ecff1c78836acc5a5bcab6c018dfdde9002555ce3823716f3212bf6347ada0",
+      "rulesetPath": "rulesets/easylist.json",
+      "filters": 74796,
+      "comments": 275,
+      "convertedFilters": 46357,
+      "droppedFilters": 28439,
+      "duplicateRules": 8,
+      "rulesBeforeMerge": 46349,
+      "rules": 3824,
+      "regexRules": 4,
+      "droppedByReason": {
+        "cosmetic filter (needs content scripts)": {
+          "count": 24711,
+          "examples": [
+            "###AC_ad",
+            "###AD_160",
+            "###AD_300"
+          ]
+        },
+        "$popup has no declarativeNetRequest equivalent": {
+          "count": 2969,
+          "examples": [
+            "&adb=y&adb=y^$popup",
+            "&cbiframe=$popup",
+            "&fp_sid=pop$popup,third-party"
+          ]
+        },
+        "$document page block (abp2dnr does not convert it)": {
+          "count": 569,
+          "examples": [
+            ".com/smartpop/$document",
+            "/?usid=*&utid=$document",
+            "/_meetups/r.php?click_id=$document"
+          ]
+        },
+        "cosmetic exception (needs content scripts)": {
+          "count": 167,
+          "examples": [
+            "@@||jetzt.de^$generichide",
+            "@@://10.0.0.$generichide",
+            "@@://10.1.1.$generichide"
+          ]
+        },
+        "regex rejected by RE2/isRegexSupported limits": {
+          "count": 14,
+          "examples": [
+            "/(https?:\\/\\/)\\w{30,}\\.me\\/\\w{30,}\\./$script,third-party",
+            "/(https?:\\/\\/)104\\.154\\..{100,}/",
+            "/(https?:\\/\\/)104\\.197\\..{100,}/"
+          ]
+        },
+        "redirect action needs host permissions": {
+          "count": 7,
+          "examples": [
+            "||2mdn.net/videoplayback/$rewrite=abp-resource:blank-mp4,domain=laurelberninteriors.com|safeframe.googlesyndication.com",
+            "||googlevideo.com/videoplayback?$rewrite=abp-resource:blank-mp4,domain=laurelberninteriors.com|safeframe.googlesyndication.com",
+            "||innovid.com/media/encoded/*.mp4$rewrite=abp-resource:blank-mp4,domain=ktla.com"
+          ]
+        },
+        "modifyHeaders action needs host permissions": {
+          "count": 2,
+          "examples": [
+            "$csp=script-src 'self' data: 'unsafe-inline' 'unsafe-hashes' 'unsafe-eval',domain=thumbs.pro",
+            "||thegay.com^$csp=default-src 'self' *.ahcdn.com fonts.gstatic.com fonts.googleapis.com https://thegay.com https://tn.thegay.com 'unsafe-inline' 'unsafe-eval' data: blob:"
+          ]
+        }
+      }
+    },
+    {
+      "id": "easyprivacy",
+      "title": "EasyPrivacy",
+      "version": "202610270115",
+      "sha256": "22d9e7acf1869964e3b44cec8fd628fe4dc90b76ea285ffc29fb152612873217",
+      "rulesetPath": "rulesets/easyprivacy.json",
+      "filters": 56415,
+      "comments": 772,
+      "convertedFilters": 56338,
+      "droppedFilters": 77,
+      "duplicateRules": 2,
+      "rulesBeforeMerge": 56336,
+      "rules": 9119,
+      "regexRules": 6,
+      "droppedByReason": {
+        "cosmetic filter (needs content scripts)": {
+          "count": 37,
+          "examples": [
+            "###cxense-recs-in-article",
+            "##.embed-responsive-trendmd",
+            "accuweather.com,acmemarkets.com,aiskillsnavigator.microsoft.com,boston.com,capezio.com,chime.com,costco.com,crunchyroll.com,deezer.com,delta.com,dnb.co.uk,dnb.com,dollargeneral.com,engadget.com,espn.com,eventbrite.com,filson.com,flyfrontier.com,formula1.com,geizhals.de,gladiatorgarageworks.com,harborfreight.com,hopwtr.com,jdsports.com,kkrt.com,lenscrafters.com,livewithkellyandmark.com,madewell.com,mail.yahoo.com,mazdausa.com,michaels.com,milesplit.live,monsterenergy.com,newyorker.com,norton.com,pandora.com,payment.nba.com,porsche.com,qobuz.com,rivals.com,soundcloud.com,spotify.com,subway.com,techcrunch.com,ticketmaster.*,tidal.com,tirerack.com,twitter.com,uber.com,ubereats.com,usaa.com,vimeo.com,visible.com,weather.com,wunderground.com,www.yahoo.com,x.com##+js(set, Navigator.prototype.globalPrivacyControl, false)"
+          ]
+        },
+        "unsupported option $redirect": {
+          "count": 23,
+          "examples": [
+            "||d21y75miwcfqoq.cloudfront.net/436f3341$image,redirect=nooptext",
+            "||static.chartbeat.com/js/chartbeat.js$redirect=chartbeat.js,script",
+            "||static.chartbeat.com/js/chartbeat_mab.js$redirect=chartbeat.js,script"
+          ]
+        },
+        "unsupported option $important": {
+          "count": 10,
+          "examples": [
+            "||pcoptimizedsettings.com/wp-content/plugins/koko-analytics/$important,redirect=noop.js,script",
+            "||pcoptimizedsettings.com/wp-content/uploads/breeze/google/gtag.js$important,redirect=noop.js,script",
+            "||googletagmanager.com/gtag/js$important,redirect=googletagmanager_gtm.js,script,xmlhttprequest,domain=redstoneonline.jp"
+          ]
+        },
+        "modifyHeaders action needs host permissions": {
+          "count": 2,
+          "examples": [
+            "$csp=child-src 'none'; frame-src 'self' *; worker-src 'none',domain=fileone.tv|theappguruz.com",
+            "$csp=child-src 'none'; frame-src *; worker-src 'none',domain=thepiratebay.org|vidoza.net"
+          ]
+        },
+        "redirect action needs host permissions": {
+          "count": 1,
+          "examples": [
+            "||d1z2jf7jlzjs58.cloudfront.net^$rewrite=abp-resource:blank-js,domain=voici.fr"
+          ]
+        },
+        "regex rejected by RE2/isRegexSupported limits": {
+          "count": 1,
+          "examples": [
+            "/^https:\\/\\/cdn\\.jsdelivr\\.net\\/npm\\/[-a-z_]{4,22}@latest\\/dist\\/script\\.min\\.js$/$script,third-party"
+          ]
+        },
+        "unsupported option $method": {
+          "count": 1,
+          "examples": [
+            "||void.nicopr.fr/rec$method=POST"
+          ]
+        },
+        "unsupported option $redirect-rule": {
+          "count": 1,
+          "examples": [
+            "@@||google-analytics.com/analytics.js$redirect-rule,script,domain=mond.how"
+          ]
+        },
+        "wildcard in $domain is not supported": {
+          "count": 1,
+          "examples": [
+            "||1.1.1.1/dns-query$xmlhttprequest,domain=allmodern.com|birchlane.com|catbirdnyc.com|gametime.co|jossandmain.com|ladym.com|libertylondon.com|mediamarkt.de|nobullproject.com|paynow.pmnts.io|perigold.com|theathletesfoot.co.nz|theathletesfoot.com.au|wayfair.*"
+          ]
+        }
+      }
+    }
+  ]
+}
