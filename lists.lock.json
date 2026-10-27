@@ -1,0 +1,31 @@
+{
+  "lockfileVersion": 1,
+  "lists": [
+    {
+      "id": "easylist",
+      "title": "EasyList",
+      "version": "202610270115",
+      "lastModified": "27 Oct 2026 01:15 UTC",
+      "canonicalUrl": "https://easylist.to/easylist/easylist.txt",
+      "sourceUrl": "https://raw.githubusercontent.com/easylist/easylist/a83cbb91acc1eb362c2552ce395f948fce09e5c1/easylist.txt",
+      "source": "Official EasyList GitHub repository (github.com/easylist/easylist), gh-pages branch, which holds the published lists. Pinned to a commit so the URL is immutable. Used instead of easylist.to, which has no versioned URLs and was unreachable from the build environment when this pipeline was set up.",
+      "mirrorCommit": "a83cbb91acc1eb362c2552ce395f948fce09e5c1",
+      "fetchedAt": "2026-10-27",
+      "bytes": 1992551,
+      "sha256": "f9ecff1c78836acc5a5bcab6c018dfdde9002555ce3823716f3212bf6347ada0"
+    },
+    {
+      "id": "easyprivacy",
+      "title": "EasyPrivacy",
+      "version": "202610270115",
+      "lastModified": "27 Oct 2026 01:15 UTC",
+      "canonicalUrl": "https://easylist.to/easylist/easyprivacy.txt",
+      "sourceUrl": "https://raw.githubusercontent.com/easylist/easylist/a83cbb91acc1eb362c2552ce395f948fce09e5c1/easyprivacy.txt",
+      "source": "Official EasyList GitHub repository (github.com/easylist/easylist), gh-pages branch, which holds the published lists. Pinned to a commit so the URL is immutable. Used instead of easylist.to, which has no versioned URLs and was unreachable from the build environment when this pipeline was set up.",
+      "mirrorCommit": "a83cbb91acc1eb362c2552ce395f948fce09e5c1",
+      "fetchedAt": "2026-10-27",
+      "bytes": 1511389,
+      "sha256": "22d9e7acf1869964e3b44cec8fd628fe4dc90b76ea285ffc29fb152612873217"
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "add-block",
+  "version": "0.1.0",
+  "description": "Personal ad and tracker blocker. Network blocking only, with bundled EasyList and EasyPrivacy rules.",
+  "minimum_chrome_version": "118",
+  "permissions": ["declarativeNetRequest"],
+  "declarative_net_request": {
+    "rule_resources": [
+      { "id": "easylist", "enabled": true, "path": "rulesets/easylist.json" },
+      { "id": "easyprivacy", "enabled": true, "path": "rulesets/easyprivacy.json" }
+    ]
+  }
+}

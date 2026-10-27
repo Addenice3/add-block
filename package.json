@@ -1,0 +1,19 @@
+{
+  "name": "add-block",
+  "private": true,
+  "description": "Personal Manifest V3 ad blocker for Chrome, Edge and Safari, built on declarativeNetRequest static rulesets.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "update-lists": "node scripts/update-lists.mjs",
+    "build": "node scripts/build.mjs",
+    "check": "node scripts/check.mjs",
+    "test": "node --test test/extension.test.mjs"
+  },
+  "devDependencies": {
+    "@eyeo/abp2dnr": "1.3.3",
+    "playwright": "1.63.0"
+  }
+}
