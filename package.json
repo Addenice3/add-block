@@ -10,7 +10,8 @@
     "update-lists": "node scripts/update-lists.mjs",
     "build": "node scripts/build.mjs",
     "check": "node scripts/check.mjs",
-    "test": "node --test test/extension.test.mjs"
+    "test": "node --test test/extension.test.mjs",
+    "icons": "node scripts/icons.mjs"
   },
   "devDependencies": {
     "@eyeo/abp2dnr": "1.3.3",

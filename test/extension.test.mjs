@@ -89,7 +89,7 @@ before(async () => {
     // A proxy receives absolute URLs.
     seen.add(req.url);
     const url = new URL(req.url);
-    if (url.href === PAGE) {
+    if (url.pathname === "/") {
       res.writeHead(200, { "content-type": "text/html" }).end(pageHtml());
     } else if (url.pathname === "/elements.html") {
       res.writeHead(200, { "content-type": "text/html" }).end(elementPage);
@@ -102,15 +102,21 @@ before(async () => {
     }
   });
   // Refuse HTTPS tunnels (browser background traffic): nothing leaves the machine.
-  proxy.on("connect", (req, socket) => socket.end("HTTP/1.1 403 Forbidden\r\n\r\n"));
+  proxy.on("connect", (req, socket) => {
+    // The browser may reset the socket before the refusal is read.
+    socket.on("error", () => {});
+    socket.end("HTTP/1.1 403 Forbidden\r\n\r\n");
+  });
   await new Promise((resolve) => proxy.listen(0, "127.0.0.1", resolve));
   proxyUrl = `http://127.0.0.1:${proxy.address().port}`;
 });
 
 after(() => new Promise((resolve) => proxy.close(resolve)));
 
-async function launch(extensionDir) {
-  const userDataDir = await mkdtemp(path.join(os.tmpdir(), "add-block-profile-"));
+async function launch(extensionDir, profileDir = null) {
+  // A caller that passes profileDir keeps it (to restart the browser with
+  // the same profile) and removes it itself.
+  const userDataDir = profileDir ?? (await mkdtemp(path.join(os.tmpdir(), "add-block-profile-")));
   const args = extensionDir ? [`--disable-extensions-except=${extensionDir}`, `--load-extension=${extensionDir}`] : [];
   const context = await chromium.launchPersistentContext(userDataDir, {
     // The full Chromium build is needed for extensions; the headless shell has none.
@@ -123,7 +129,7 @@ async function launch(extensionDir) {
     context,
     close: async () => {
       await context.close();
-      await rm(userDataDir, { recursive: true, force: true });
+      if (!profileDir) await rm(userDataDir, { recursive: true, force: true });
     },
   };
 }
@@ -172,6 +178,34 @@ async function makeProbe(permissions = [], rulesetTransform = null) {
   return { probeDir, manifest, remove: () => rm(probeDir, { recursive: true, force: true }) };
 }
 
+// Opens the popup page in its own unfocused window, so that the popup's
+// own "active tab in the last focused window" query finds the web page, as
+// it does under the toolbar button. Needs a worker in the probe.
+async function openPopup(context, worker) {
+  const popupPromise = context.waitForEvent("page", { predicate: (p) => p.url().endsWith("/popup.html") });
+  await worker.evaluate(() =>
+    chrome.windows.create({ url: chrome.runtime.getURL("popup.html"), type: "popup", focused: false, width: 320, height: 420 }),
+  );
+  const popup = await popupPromise;
+  await popup.waitForFunction(() => document.getElementById("site").textContent !== "…");
+  return popup;
+}
+
+async function popupState(popup) {
+  return popup.evaluate(() => ({
+    site: document.getElementById("site").textContent,
+    label: document.getElementById("site-label").textContent,
+    on: document.getElementById("switch").checked,
+    disabled: document.getElementById("switch").disabled,
+    count: document.getElementById("count-row").hidden ? null : document.getElementById("count").textContent,
+    countTitle: document.getElementById("count").title,
+    note: document.getElementById("note").textContent,
+    offNote: !document.getElementById("off-note").hidden,
+  }));
+}
+
+const BLOCKED_COUNT = RESOURCES.filter((r) => r.blocked).length;
+
 function median(numbers) {
   const sorted = [...numbers].sort((a, b) => a - b);
   return sorted[Math.floor(sorted.length / 2)];
@@ -212,8 +246,9 @@ test("dist/ loads cleanly, asks for the documented permissions and blocks ads an
       `Chromium ${context.browser()?.version()} permission messages: ${JSON.stringify(messages)}; ` +
         `site access: ${runtimeHostPermissions.hostAccess}`,
     );
-    assert.deepEqual(messages, ["Block content on any page"], "only the declarativeNetRequest message");
+    assert.deepEqual(messages, ["Block content on any page"], "only the declarativeNetRequest message; activeTab adds none");
     assert.equal(runtimeHostPermissions.hostAccess, "ON_ALL_SITES", "content scripts match <all_urls>");
+    assert.deepEqual(extension.permissions.simplePermissions.length, 1);
 
     // Rulesets are indexed when the extension loads; allow a moment for that.
     let outcomes;
@@ -484,22 +519,300 @@ test("merged rulesets match the same requests as the unmerged rules", async () =
   }
 });
 
-test("npm run check rejects JavaScript in pages", async () => {
+// Runs scripts/check.mjs on a copy of dist/ changed by mutate(dir, manifest)
+// and expects it to fail with every given message.
+async function expectCheckFailure(name, mutate, expected) {
   const dir = await mkdtemp(path.join(os.tmpdir(), "add-block-bad-"));
   try {
     await cp(DIST, dir, { recursive: true });
-    const manifest = JSON.parse(await readFile(path.join(dir, "manifest.json"), "utf8"));
-    manifest.content_scripts[0].js = ["inject.js"];
-    await writeFile(path.join(dir, "manifest.json"), JSON.stringify(manifest));
-    await writeFile(path.join(dir, "inject.js"), "document.body.remove()");
+    const manifestPath = path.join(dir, "manifest.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    await mutate(dir, manifest);
+    await writeFile(manifestPath, JSON.stringify(manifest));
     const run = promisify(execFile)(process.execPath, ["scripts/check.mjs", dir]);
     await assert.rejects(run, (error) => {
-      assert.equal(error.code, 1);
-      assert.match(error.stderr, /JavaScript in pages is not allowed/);
-      assert.match(error.stderr, /unexpected file type: inject.js/);
+      assert.equal(error.code, 1, `${name}: check should exit 1`);
+      for (const pattern of expected) assert.match(error.stderr, pattern, `${name}: expected ${pattern}`);
       return true;
     });
+    console.log(`check rejects ${name}`);
   } finally {
     await rm(dir, { recursive: true, force: true });
+  }
+}
+
+test("npm run check rejects JavaScript in pages, network APIs, remote URLs and extra code", async () => {
+  const popupJs = (dir) => path.join(dir, "popup.js");
+  const append = async (file, text) => writeFile(file, (await readFile(file, "utf8")) + text);
+
+  await expectCheckFailure(
+    "js in a content script",
+    async (dir, manifest) => {
+      manifest.content_scripts[0].js = ["inject.js"];
+      await writeFile(path.join(dir, "inject.js"), "document.body.remove()");
+    },
+    [/JavaScript in pages is not allowed/, /script not allowed: inject.js/],
+  );
+  await expectCheckFailure(
+    "a background worker",
+    async (dir, manifest) => {
+      manifest.background = { service_worker: "worker.js" };
+      await writeFile(path.join(dir, "worker.js"), "");
+    },
+    [/no background scripts allowed/, /script not allowed: worker.js/],
+  );
+  for (const [name, code, pattern] of [
+    ["a network call", "\nfetch('/x');\n", /popup.js: fetch is not allowed/],
+    ["XMLHttpRequest", "\nnew XMLHttpRequest();\n", /XMLHttpRequest is not allowed/],
+    ["a WebSocket", "\nnew WebSocket(x);\n", /WebSocket is not allowed/],
+    ["an EventSource", "\nnew EventSource(x);\n", /EventSource is not allowed/],
+    ["a beacon", "\nnavigator.sendBeacon(x);\n", /sendBeacon is not allowed/],
+    ["importScripts", "\nimportScripts('x.js');\n", /importScripts is not allowed/],
+    ["a dynamic import", "\nimport('./x.js');\n", /dynamic import\(\) is not allowed/],
+    ["a remote URL in a script", "\nconst u = 'https://example.com/x';\n", /popup.js: URL in script: https:\/\/example.com\/x/],
+    ["a protocol-relative URL", "\nconst u = '//example.com/x';\n", /protocol-relative URL is not allowed/],
+    ["code in pages via the scripting API", "\nchrome.scripting.executeScript({});\n", /scripting API \(code in pages\) is not allowed/],
+    ["eval", "\neval('1');\n", /eval is not allowed/],
+  ]) {
+    await expectCheckFailure(name, (dir) => append(popupJs(dir), code), [pattern]);
+  }
+  await expectCheckFailure(
+    "a remote script in the popup page",
+    async (dir) => {
+      const file = path.join(dir, "popup.html");
+      await writeFile(file, (await readFile(file, "utf8")).replace('<script src="popup.js">', '<script src="https://cdn.example/x.js">'));
+    },
+    [/popup.html: URL in page: https:\/\/cdn.example\/x.js/, /popup.html: script not allowed: https:\/\/cdn.example\/x.js/],
+  );
+  await expectCheckFailure(
+    "an inline script in the popup page",
+    async (dir) => {
+      const file = path.join(dir, "popup.html");
+      await writeFile(file, (await readFile(file, "utf8")).replace("</body>", "<script>alert(1)</script></body>"));
+    },
+    [/popup.html: inline script/],
+  );
+  await expectCheckFailure(
+    "a second page",
+    (dir) => writeFile(path.join(dir, "options.html"), "<!doctype html><title>x</title>"),
+    [/page not allowed: options.html/],
+  );
+  await expectCheckFailure(
+    "a permission outside the allowlist",
+    (dir, manifest) => manifest.permissions.push("tabs"),
+    [/permission not allowed: tabs/],
+  );
+  await expectCheckFailure(
+    "a block rule with an allow rule id",
+    async (dir, manifest) => {
+      const file = path.join(dir, manifest.declarative_net_request.rule_resources[0].path);
+      const rules = JSON.parse(await readFile(file, "utf8"));
+      rules[0].id = 1_000_000 + rules.length;
+      await writeFile(file, JSON.stringify(rules));
+    },
+    [/\(block\) is in the wrong id range/],
+  );
+});
+
+// The popup needs, for the tab it was opened on, the tab's URL and
+// getMatchedRules. The toolbar click grants both through activeTab; test
+// automation cannot click the toolbar, so the probe gets the same two
+// things for every tab from the "tabs" and "declarativeNetRequestFeedback"
+// permissions instead, plus an empty worker to open the popup window.
+// Chrome's own error text, logged by the test below, states the
+// equivalence. The popup page and script are the ones in dist/, unchanged.
+test("popup: the switch turns blocking off and on for the site, and the setting survives a restart", async () => {
+  const site = "http://www.news.site.test/";
+  const probe = await makeProbe(["tabs", "declarativeNetRequestFeedback"]);
+  const profileDir = await mkdtemp(path.join(os.tmpdir(), "add-block-profile-"));
+  const dynamicRules = (worker) => worker.evaluate(() => chrome.declarativeNetRequest.getDynamicRules());
+  // Loads the site in its own tab and reports every resource's outcome.
+  const visit = async (page) => {
+    const outcomes = {};
+    page.on("requestfinished", (request) => (outcomes[request.url()] ??= "ok"));
+    page.on("requestfailed", (request) => (outcomes[request.url()] = request.failure()?.errorText));
+    await page.goto(site, { waitUntil: "load" });
+    return outcomes;
+  };
+  const allBlocked = (outcomes) => RESOURCES.every(({ url, blocked }) => (outcomes[url] === BLOCKED_BY_CLIENT) === blocked);
+  const noneBlocked = (outcomes) => RESOURCES.every(({ url }) => outcomes[url] === "ok");
+
+  try {
+    // Session 1: blocking on, switch it off.
+    let { context, close } = await launch(probe.probeDir, profileDir);
+    try {
+      const worker = context.serviceWorkers()[0] ?? (await context.waitForEvent("serviceworker"));
+      const page = await context.newPage();
+      let outcomes;
+      for (let attempt = 1; attempt <= 5 && !allBlocked((outcomes = await visit(page))); attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+      assert.ok(allBlocked(outcomes), "blocking works before the switch is touched");
+      assert.deepEqual(await dynamicRules(worker), [], "no dynamic rules to start with");
+
+      let popup = await openPopup(context, worker);
+      await popup.waitForFunction(() => document.getElementById("count").textContent !== "–");
+      let state = await popupState(popup);
+      console.log(`popup on ${site}: ${JSON.stringify(state)}`);
+      assert.equal(state.site, "news.site.test", "shows the site without www.");
+      assert.equal(state.on, true);
+      assert.equal(state.disabled, false);
+      assert.equal(state.label, "Blocking on");
+      assert.equal(state.offNote, false);
+      assert.equal(state.count, String(BLOCKED_COUNT), "counts the blocked requests of the page");
+
+      await popup.click("label.switch");
+      await popup.waitForFunction(() => document.getElementById("switch").checked === false && !document.getElementById("switch").disabled);
+      const rules = await dynamicRules(worker);
+      assert.equal(rules.length, 2, "two dynamic rules for the site");
+      const frameRule = rules.find((rule) => rule.action.type === "allowAllRequests");
+      const requestRule = rules.find((rule) => rule.action.type === "allow");
+      assert.deepEqual(frameRule.condition, { requestDomains: ["news.site.test"], resourceTypes: ["main_frame"] });
+      assert.deepEqual(requestRule.condition, { initiatorDomains: ["news.site.test"] });
+      for (const rule of rules) assert.ok(rule.priority > 2010, "outranks every static rule");
+      // The popup reloads the tab and then shows the count for the new load.
+      await popup.waitForFunction(() => document.getElementById("count").textContent === "0", null, { timeout: 15000 });
+      state = await popupState(popup);
+      assert.equal(state.label, "Blocking off");
+      assert.equal(state.offNote, true, "explains that element hiding stays on and where to stop it");
+
+      outcomes = await visit(page);
+      assert.ok(noneBlocked(outcomes), `nothing blocked with the switch off: ${JSON.stringify(outcomes)}`);
+      for (const { url } of RESOURCES) assert.ok(seen.has(url), `${url} reached the proxy`);
+
+      // The link to Chrome's per-site extension settings opens them in a tab.
+      const settingsPromise = context.waitForEvent("page", { predicate: (p) => p.url().startsWith("chrome://extensions") });
+      await popup.click("#site-settings");
+      const settings = await settingsPromise;
+      console.log(`site settings link opened ${settings.url()}`);
+      await settings.close();
+
+      // Documented limit: the CSS still applies on a site that is off.
+      elementPage = elementHtml([{ name: "generic", selector: (await pickCases()).generic }]);
+      const elements = await context.newPage();
+      await elements.goto(`${site}elements.html`, { waitUntil: "load" });
+      const display = await elements.evaluate(() => getComputedStyle(document.querySelector("[data-test=generic]")).display);
+      assert.equal(display, "none", "element hiding stays on while request blocking is off (see DESIGN.md)");
+      await elements.close();
+      await popup.close();
+    } finally {
+      await close();
+    }
+
+    // Session 2: the same profile after a restart. Still off; switch it on.
+    ({ context, close } = await launch(probe.probeDir, profileDir));
+    try {
+      const worker = context.serviceWorkers()[0] ?? (await context.waitForEvent("serviceworker"));
+      assert.equal((await dynamicRules(worker)).length, 2, "the dynamic rules survived the restart");
+      const page = await context.newPage();
+      let outcomes = await visit(page);
+      assert.ok(noneBlocked(outcomes), `still off after a restart: ${JSON.stringify(outcomes)}`);
+
+      const popup = await openPopup(context, worker);
+      await popup.waitForFunction(() => document.getElementById("count").textContent !== "–");
+      let state = await popupState(popup);
+      console.log(`popup after restart: ${JSON.stringify(state)}`);
+      assert.equal(state.on, false);
+      assert.equal(state.label, "Blocking off");
+      assert.equal(state.count, "0");
+
+      await popup.click("label.switch");
+      await popup.waitForFunction(() => document.getElementById("switch").checked === true && !document.getElementById("switch").disabled);
+      assert.deepEqual(await dynamicRules(worker), [], "the dynamic rules are removed");
+      await popup.waitForFunction((n) => document.getElementById("count").textContent === n, String(BLOCKED_COUNT), { timeout: 15000 });
+      state = await popupState(popup);
+      assert.equal(state.label, "Blocking on");
+      await popup.close();
+
+      outcomes = await visit(page);
+      assert.ok(allBlocked(outcomes), `blocking is back on: ${JSON.stringify(outcomes)}`);
+    } finally {
+      await close();
+    }
+  } finally {
+    await probe.remove();
+    await rm(profileDir, { recursive: true, force: true });
+  }
+});
+
+test("popup: without activeTab it names no site and says why; getMatchedRules says what it needs", async () => {
+  const probe = await makeProbe();
+  const { context, close } = await launch(probe.probeDir);
+  try {
+    const worker = context.serviceWorkers()[0] ?? (await context.waitForEvent("serviceworker"));
+    const page = await context.newPage();
+    await page.goto(PAGE, { waitUntil: "load" });
+    // What activeTab stands in for: Chrome's error names the alternatives.
+    const error = await worker.evaluate(async () => {
+      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      try {
+        await chrome.declarativeNetRequest.getMatchedRules({ tabId: tab.id });
+        return null;
+      } catch (e) {
+        return `${e.message} (tab.url seen by the extension: ${JSON.stringify(tab.url)})`;
+      }
+    });
+    console.log(`getMatchedRules without activeTab: ${error}`);
+    assert.match(error, /activeTab/);
+    assert.match(error, /declarativeNetRequestFeedback/);
+
+    const popup = await openPopup(context, worker);
+    const state = await popupState(popup);
+    console.log(`popup without activeTab: ${JSON.stringify(state)}`);
+    assert.equal(state.site, "Unknown site");
+    assert.equal(state.disabled, true);
+    assert.equal(state.count, null);
+    assert.match(state.note, /toolbar button/);
+    await popup.close();
+  } finally {
+    await close();
+    await probe.remove();
+  }
+});
+
+// Element hiding cannot be switched off per site by the extension (that
+// would take JavaScript in pages or host permissions, see DESIGN.md).
+// Chrome's site access setting for the extension can: "On specific sites"
+// applies the content scripts only to the listed sites. Request blocking
+// does not depend on site access, so it continues everywhere. (Chrome's
+// per-site "restricted sites" list would be the direct answer, but
+// developerPrivate.addUserSpecifiedSites is a no-op in this Chromium,
+// with or without the ExtensionsMenuAccessControl feature.)
+test("Chrome's site access setting \"On specific sites\" stops the CSS elsewhere while blocking continues", async () => {
+  const { context, close } = await launch(DIST);
+  try {
+    const page = await context.newPage();
+    await page.goto("chrome://extensions");
+    const [{ id }] = await extensionsInfo(context);
+    await page.evaluate(
+      (id) => new Promise((resolve) => chrome.developerPrivate.updateExtensionConfiguration({ extensionId: id, hostAccess: "ON_SPECIFIC_SITES" }, resolve)),
+      id,
+    );
+    await page.evaluate((id) => new Promise((resolve) => chrome.developerPrivate.addHostPermission(id, "http://other.site.test/*", resolve)), id);
+    const [{ permissions }] = await extensionsInfo(context);
+    console.log(`site access now: ${JSON.stringify(permissions.runtimeHostPermissions)}`);
+    assert.equal(permissions.runtimeHostPermissions.hostAccess, "ON_SPECIFIC_SITES");
+    await page.close();
+
+    elementPage = elementHtml([{ name: "generic", selector: (await pickCases()).generic }]);
+    const hidden = async (url) => {
+      const p = await context.newPage();
+      await p.goto(url, { waitUntil: "load" });
+      const display = await p.evaluate(() => getComputedStyle(document.querySelector("[data-test=generic]")).display);
+      await p.close();
+      return display === "none";
+    };
+    for (let attempt = 1; attempt <= 5 && !(await hidden("http://other.site.test/elements.html")); attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+    assert.equal(await hidden("http://other.site.test/elements.html"), true, "CSS applies on the listed site");
+    assert.equal(await hidden("http://news.site.test/elements.html"), false, "no CSS on a site that is not listed");
+    const outcomes = await loadPage(context);
+    for (const { name, url, blocked } of RESOURCES) {
+      assert.equal(outcomes[url] === BLOCKED_BY_CLIENT, blocked, `${name} on the unlisted site`);
+    }
+    console.log("On specific sites: generic CSS only on the listed site, requests blocked on both");
+  } finally {
+    await close();
   }
 });

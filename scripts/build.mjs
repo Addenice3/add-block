@@ -23,6 +23,9 @@ const EXAMPLES_PER_REASON = 3;
 // Actions that work with the bare "declarativeNetRequest" permission.
 // redirect and modifyHeaders would need host permissions, so they are dropped.
 const ALLOWED_ACTIONS = new Set(["block", "allow", "allowAllRequests"]);
+// Static rule ids below this are block rules, from here on allow rules. The
+// same constant lives in src/popup.js and scripts/check.mjs.
+const FIRST_ALLOW_RULE_ID = 1_000_000;
 
 // Cosmetic filters go to scripts/cosmetic.mjs, which turns them into CSS.
 const COSMETIC_TYPES = new Set(["elemhide", "elemhideexception", "elemhideemulation", "snippet"]);
@@ -137,7 +140,16 @@ async function convertList(text) {
   assertMergeEquivalent(rules, merged, "ruleset");
   stats.rulesBeforeMerge = rules.length;
   // Ids are assigned last so they are dense and stable.
-  const ruleset = merged.map((rule, index) => ({ id: index + 1, ...rule }));
+  // Ids say what a rule does: block rules count up from 1, allow rules from
+  // FIRST_ALLOW_RULE_ID. The popup counts blocked requests from matched rule
+  // ids alone (it has no other way to read a static rule), and check.mjs
+  // verifies the split. Order within each group follows the list.
+  const blocks = merged.filter((rule) => rule.action.type === "block");
+  const allows = merged.filter((rule) => rule.action.type !== "block");
+  const ruleset = [
+    ...blocks.map((rule, index) => ({ id: index + 1, ...rule })),
+    ...allows.map((rule, index) => ({ id: FIRST_ALLOW_RULE_ID + index, ...rule })),
+  ];
   const droppedByReason = Object.fromEntries(
     [...dropped.entries()].sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0])),
   );
