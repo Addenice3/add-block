@@ -5,8 +5,10 @@ import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 
+import { buildCosmetic } from "./cosmetic.mjs";
 import { loadPinned } from "./fetch.mjs";
 import { LOCK_FILE } from "./lists.mjs";
+import { assertMergeEquivalent, mergeHostRules } from "./merge.mjs";
 
 const require = createRequire(import.meta.url);
 const { convertFilter } = require("@eyeo/abp2dnr");
@@ -22,9 +24,12 @@ const EXAMPLES_PER_REASON = 3;
 // redirect and modifyHeaders would need host permissions, so they are dropped.
 const ALLOWED_ACTIONS = new Set(["block", "allow", "allowAllRequests"]);
 
+// Cosmetic filters go to scripts/cosmetic.mjs, which turns them into CSS.
 const COSMETIC_TYPES = new Set(["elemhide", "elemhideexception", "elemhideemulation", "snippet"]);
 // Also catches uBO/AdGuard cosmetic syntax that the ABP parser rejects as invalid.
 const COSMETIC_SEPARATOR = /^[^/|$]*#@?[?$]?#/;
+// Network exceptions that switch cosmetic filters off on a site.
+const HIDING_EXCEPTION = /(^|,)(generichide|ghide|elemhide|ehide)(=|,|$)/;
 
 const CONVERTER_ERRORS = {
   filter_invalid_regexp: "regex rejected by RE2/isRegexSupported limits",
@@ -36,70 +41,18 @@ function emptyResultReason(text) {
   const options = text.includes("$") ? text.slice(text.lastIndexOf("$") + 1).toLowerCase() : "";
   const has = (pattern) => new RegExp(`(^|,)(${pattern})(=|,|$)`).test(options);
   if (has("popup")) return "$popup has no declarativeNetRequest equivalent";
-  if (has("elemhide|ehide|generichide|ghide")) return "cosmetic exception (needs content scripts)";
   if (has("genericblock")) return "$genericblock has no declarativeNetRequest equivalent";
   if (has("document|doc")) return "$document page block (abp2dnr does not convert it)";
   if (/(^|,)domain=[^,]*\*/.test(options)) return "wildcard in $domain is not supported";
   return "no rule generated";
 }
 
-// "||example.com^" matches example.com and its subdomains on any path, which
-// is exactly what requestDomains matches. Rules that differ only in that host
-// are folded into one rule listing all the hosts. This keeps the total well
-// inside Chrome's guaranteed static rule count without changing what matches.
-const HOST_ONLY = /^\|\|((?:[a-z0-9-]+\.)+[a-z0-9-]*[a-z][a-z0-9-]*)\^$/;
-const MERGEABLE_ACTIONS = new Set(["block", "allow"]);
-const MERGEABLE_KEYS = new Set([
-  "urlFilter",
-  "domainType",
-  "resourceTypes",
-  "excludedResourceTypes",
-  "initiatorDomains",
-  "excludedInitiatorDomains",
-  "requestMethods",
-  "excludedRequestMethods",
-]);
-
-function canonical(object) {
-  return JSON.stringify(Object.fromEntries(Object.entries(object).sort(([a], [b]) => a.localeCompare(b))));
-}
-
-function mergeHostRules(rules) {
-  const out = [];
-  const groups = new Map();
-  for (const rule of rules) {
-    const host = HOST_ONLY.exec(rule.condition.urlFilter ?? "")?.[1];
-    const mergeable =
-      host && MERGEABLE_ACTIONS.has(rule.action.type) && Object.keys(rule.condition).every((key) => MERGEABLE_KEYS.has(key));
-    if (!mergeable) {
-      out.push(rule);
-      continue;
-    }
-    const { urlFilter, ...rest } = rule.condition;
-    const key = `${rule.priority}|${canonical(rule.action)}|${canonical(rest)}`;
-    let group = groups.get(key);
-    if (!group) {
-      group = { hosts: new Set(), rule: { priority: rule.priority, condition: rest, action: rule.action } };
-      groups.set(key, group);
-      out.push(group.rule);
-    }
-    group.hosts.add(host);
-  }
-  for (const { hosts, rule } of groups.values()) {
-    const [first] = hosts;
-    rule.condition =
-      hosts.size === 1
-        ? { urlFilter: `||${first}^`, ...rule.condition }
-        : { ...rule.condition, requestDomains: [...hosts].sort() };
-  }
-  return out;
-}
-
 async function convertList(text) {
   const rules = [];
+  const cosmetic = [];
   const seen = new Set();
   const dropped = new Map();
-  const stats = { filters: 0, comments: 0, convertedFilters: 0, droppedFilters: 0, duplicateRules: 0 };
+  const stats = { filters: 0, comments: 0, convertedFilters: 0, cosmeticFilters: 0, droppedFilters: 0, duplicateRules: 0 };
 
   const drop = (reason, filter) => {
     const entry = dropped.get(reason) ?? { count: 0, examples: [] };
@@ -120,9 +73,15 @@ async function convertList(text) {
     stats.filters++;
 
     if (COSMETIC_TYPES.has(filter.type) || (filter.type === "invalid" && COSMETIC_SEPARATOR.test(line))) {
-      drop("cosmetic filter (needs content scripts)", line);
-      stats.droppedFilters++;
+      cosmetic.push({ line, filter });
+      stats.cosmeticFilters++;
       continue;
+    }
+    const options = line.includes("$") ? line.slice(line.lastIndexOf("$") + 1).toLowerCase() : "";
+    const hidingException = filter.type === "allowing" && HIDING_EXCEPTION.test(options);
+    if (hidingException) {
+      cosmetic.push({ line, filter });
+      stats.cosmeticFilters++;
     }
     if (filter.type === "invalid") {
       const reason = filter.option ? `unsupported option $${filter.option}` : `invalid filter (${filter.reason})`;
@@ -142,8 +101,11 @@ async function convertList(text) {
     }
 
     if (converted.length === 0) {
-      drop(emptyResultReason(line), line);
-      stats.droppedFilters++;
+      // A pure $generichide/$elemhide exception is handled as CSS above.
+      if (!hidingException) {
+        drop(emptyResultReason(line), line);
+        stats.droppedFilters++;
+      }
       continue;
     }
 
@@ -172,18 +134,26 @@ async function convertList(text) {
   }
 
   const merged = mergeHostRules(rules);
+  assertMergeEquivalent(rules, merged, "ruleset");
   stats.rulesBeforeMerge = rules.length;
   // Ids are assigned last so they are dense and stable.
   const ruleset = merged.map((rule, index) => ({ id: index + 1, ...rule }));
   const droppedByReason = Object.fromEntries(
     [...dropped.entries()].sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0])),
   );
-  return { ruleset, stats, droppedByReason };
+  return { ruleset, cosmetic, stats, droppedByReason };
 }
 
 // One rule per line keeps list updates diffable.
 function serializeRuleset(ruleset) {
   return "[\n" + ruleset.map((rule) => JSON.stringify(rule)).join(",\n") + "\n]\n";
+}
+
+// Likewise one content_scripts entry per line; there are thousands.
+function serializeManifest(manifest) {
+  const { content_scripts: contentScripts, ...rest } = manifest;
+  const entries = contentScripts.map((entry) => "    " + JSON.stringify(entry)).join(",\n");
+  return JSON.stringify(rest, null, 2).replace(/\n}$/, `,\n  "content_scripts": [\n${entries}\n  ]\n}\n`);
 }
 
 const lock = JSON.parse(await readFile(LOCK_FILE, "utf8"));
@@ -200,10 +170,12 @@ await rm(DIST, { recursive: true, force: true });
 await cp(SRC, DIST, { recursive: true });
 
 const report = { extensionVersion: manifest.version, lists: [] };
+const cosmeticFilters = [];
 
 for (const list of lock.lists) {
   const text = (await loadPinned(list)).toString("utf8");
-  const { ruleset, stats, droppedByReason } = await convertList(text);
+  const { ruleset, cosmetic, stats, droppedByReason } = await convertList(text);
+  cosmeticFilters.push(...cosmetic);
   const resource = resources.find((r) => r.id === list.id);
   const outPath = path.join(DIST, resource.path);
   await mkdir(path.dirname(outPath), { recursive: true });
@@ -222,10 +194,28 @@ for (const list of lock.lists) {
     droppedByReason,
   });
   console.log(
-    `${list.id}: ${stats.filters} filters, ${stats.convertedFilters} converted, ${stats.droppedFilters} dropped -> ` +
-      `${stats.rulesBeforeMerge} rules, ${ruleset.length} after merging host-only rules (${regexRules} regex)`,
+    `${list.id}: ${stats.filters} filters, ${stats.convertedFilters} converted, ${stats.cosmeticFilters} cosmetic, ` +
+      `${stats.droppedFilters} dropped -> ${stats.rulesBeforeMerge} rules, ${ruleset.length} after merging host-only rules ` +
+      `(${regexRules} regex); merge check passed`,
   );
 }
+
+// Cosmetic filters from all lists are handled together, because an
+// exception in one list applies to the filters of every list.
+const { files, contentScripts, stats: cosmeticStats } = buildCosmetic(cosmeticFilters);
+for (const [file, css] of files) {
+  const outPath = path.join(DIST, file);
+  await mkdir(path.dirname(outPath), { recursive: true });
+  await writeFile(outPath, css);
+}
+manifest.content_scripts = contentScripts;
+await writeFile(path.join(DIST, "manifest.json"), serializeManifest(manifest));
+report.cosmetic = cosmeticStats;
+console.log(
+  `cosmetic: ${cosmeticStats.filters} filters, ${cosmeticStats.used} used, ${cosmeticStats.skipped} skipped -> ` +
+    `${cosmeticStats.genericSelectors} generic selectors in ${cosmeticStats.files} CSS files ` +
+    `(${cosmeticStats.cssBytes} bytes), ${cosmeticStats.contentScripts} content_scripts entries`,
+);
 
 await writeFile(REPORT, JSON.stringify(report, null, 2) + "\n");
 console.log(`Wrote ${DIST}/ and ${REPORT}`);

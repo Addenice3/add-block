@@ -1,3 +1,5 @@
 node_modules/
 .cache/
 test-results/
+# Chromium writes its ruleset index here when dist/ is loaded unpacked
+dist/_metadata/

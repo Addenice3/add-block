@@ -1,5 +1,5 @@
 {
-  "extensionVersion": "0.1.0",
+  "extensionVersion": "0.2.0",
   "lists": [
     {
       "id": "easylist",
@@ -10,20 +10,13 @@
       "filters": 74796,
       "comments": 275,
       "convertedFilters": 46357,
-      "droppedFilters": 28439,
+      "cosmeticFilters": 24878,
+      "droppedFilters": 3561,
       "duplicateRules": 8,
       "rulesBeforeMerge": 46349,
       "rules": 3824,
       "regexRules": 4,
       "droppedByReason": {
-        "cosmetic filter (needs content scripts)": {
-          "count": 24711,
-          "examples": [
-            "###AC_ad",
-            "###AD_160",
-            "###AD_300"
-          ]
-        },
         "$popup has no declarativeNetRequest equivalent": {
           "count": 2969,
           "examples": [
@@ -38,14 +31,6 @@
             ".com/smartpop/$document",
             "/?usid=*&utid=$document",
             "/_meetups/r.php?click_id=$document"
-          ]
-        },
-        "cosmetic exception (needs content scripts)": {
-          "count": 167,
-          "examples": [
-            "@@||jetzt.de^$generichide",
-            "@@://10.0.0.$generichide",
-            "@@://10.1.1.$generichide"
           ]
         },
         "regex rejected by RE2/isRegexSupported limits": {
@@ -82,20 +67,13 @@
       "filters": 56415,
       "comments": 772,
       "convertedFilters": 56338,
-      "droppedFilters": 77,
+      "cosmeticFilters": 37,
+      "droppedFilters": 40,
       "duplicateRules": 2,
       "rulesBeforeMerge": 56336,
       "rules": 9119,
       "regexRules": 6,
       "droppedByReason": {
-        "cosmetic filter (needs content scripts)": {
-          "count": 37,
-          "examples": [
-            "###cxense-recs-in-article",
-            "##.embed-responsive-trendmd",
-            "accuweather.com,acmemarkets.com,aiskillsnavigator.microsoft.com,boston.com,capezio.com,chime.com,costco.com,crunchyroll.com,deezer.com,delta.com,dnb.co.uk,dnb.com,dollargeneral.com,engadget.com,espn.com,eventbrite.com,filson.com,flyfrontier.com,formula1.com,geizhals.de,gladiatorgarageworks.com,harborfreight.com,hopwtr.com,jdsports.com,kkrt.com,lenscrafters.com,livewithkellyandmark.com,madewell.com,mail.yahoo.com,mazdausa.com,michaels.com,milesplit.live,monsterenergy.com,newyorker.com,norton.com,pandora.com,payment.nba.com,porsche.com,qobuz.com,rivals.com,soundcloud.com,spotify.com,subway.com,techcrunch.com,ticketmaster.*,tidal.com,tirerack.com,twitter.com,uber.com,ubereats.com,usaa.com,vimeo.com,visible.com,weather.com,wunderground.com,www.yahoo.com,x.com##+js(set, Navigator.prototype.globalPrivacyControl, false)"
-          ]
-        },
         "unsupported option $redirect": {
           "count": 23,
           "examples": [
@@ -151,5 +129,53 @@
         }
       }
     }
-  ]
+  ],
+  "cosmetic": {
+    "filters": 24915,
+    "used": 14136,
+    "skipped": 10779,
+    "genericSelectors": 13636,
+    "genericSelectorsWithExceptions": 300,
+    "exceptionDomains": 475,
+    "hidingExceptionPatterns": 189,
+    "wildcardExceptionDomainsDropped": 0,
+    "specificFilterDomains": 7936,
+    "files": 2,
+    "contentScripts": 2,
+    "cssBytes": 224458,
+    "skippedByReason": {
+      "site-specific filter (needs one content script per domain set, see DESIGN.md)": {
+        "count": 10447,
+        "examples": [
+          "advfn.com###APS_300_X_600",
+          "advfn.com###APS_BILLBOARD",
+          "thetvdb.com###ATF"
+        ]
+      },
+      "extended selector (#?#, :-abp-has and the like) needs JavaScript": {
+        "count": 291,
+        "examples": [
+          "discord.com#?#.wrapper__0d616:has-text(Get Reward)",
+          "gamedev.net#?#.dark\\:border-gray-700:has-text(Advertisement)",
+          "deliveroo.*#?#a[role=\"button\"]:has(p:has-text(Sponsored))"
+        ]
+      },
+      "cosmetic syntax not understood by the parser": {
+        "count": 37,
+        "examples": [
+          "cyberchef.org###workspace-wrapper > [id][style*=\"height\"] {height: 100% !important}",
+          "justjared.com##.banner-spacer-top {max-height: 50px !important;}",
+          "justjared.com##[role=\"banner\"] {top:0 !important}"
+        ]
+      },
+      "$generichide/$elemhide exception whose pattern is not a host or path prefix": {
+        "count": 4,
+        "examples": [
+          "@@://localhost:$generichide",
+          "@@||music.amazon.$generichide",
+          "@@||taboolanews.com/summary-page/*_samsung-carnival-$generichide"
+        ]
+      }
+    }
+  }
 }
