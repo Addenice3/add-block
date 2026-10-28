@@ -25,18 +25,55 @@ const ALLOWED_MANIFEST_KEYS = new Set([
   "minimum_chrome_version",
   "icons",
   "permissions",
+  "action",
   "declarative_net_request",
   "content_scripts",
 ]);
-const ALLOWED_PERMISSIONS = new Set(["declarativeNetRequest"]);
+const ALLOWED_PERMISSIONS = new Set(["declarativeNetRequest", "activeTab"]);
+const ALLOWED_ACTION_KEYS = new Set(["default_title", "default_icon", "default_popup"]);
 const ALLOWED_ACTIONS = new Set(["block", "allow", "allowAllRequests"]);
-// Data, stylesheets and documentation only: nothing the browser can execute.
-const ALLOWED_EXTENSIONS = new Set([".json", ".txt", ".png", ".css"]);
+// Static rule ids below this are block rules, from here on allow rules
+// (assigned by build.mjs, relied on by popup.js).
+const FIRST_ALLOW_RULE_ID = 1_000_000;
+// Data, stylesheets, documentation, icons, and the extension's own pages.
+const ALLOWED_EXTENSIONS = new Set([".json", ".txt", ".png", ".css", ".html", ".js"]);
+// The only places JavaScript may exist: the popup page and its script. Both
+// run in the extension's own page, never in a web page. A background worker
+// or a second script is a design change, not a build detail.
+const ALLOWED_PAGES = new Set(["popup.html"]);
+const ALLOWED_SCRIPTS = new Set(["popup.js"]);
+// Browser-internal pages the popup may open in a tab. Not remote: the
+// chrome: scheme never leaves the browser.
+const ALLOWED_INTERNAL_URLS = new Set(["chrome://extensions/?id="]);
 // Content scripts may carry CSS and say where it applies, nothing else.
 // "js" is deliberately absent: no JavaScript ever runs in pages.
 const ALLOWED_CONTENT_SCRIPT_KEYS = new Set(["matches", "exclude_matches", "css", "run_at", "all_frames"]);
 const MATCH_PATTERN = /^(\*|https?):\/\/(\*|(\*\.)?[a-z0-9.-]+)\/[^\s"]*$/;
 const URL_PATTERN = /[a-z][a-z0-9+.-]*:\/\//i;
+// Anything a script could use to talk to the network, load code, or run
+// code in a web page. Matched as whole words anywhere in the file, comments
+// and strings included: a script that needs to mention them does not belong.
+const FORBIDDEN_IN_SCRIPTS = [
+  ["fetch", /\bfetch\b/],
+  ["XMLHttpRequest", /\bXMLHttpRequest\b/],
+  ["WebSocket", /\bWebSocket\b/],
+  ["EventSource", /\bEventSource\b/],
+  ["sendBeacon", /\bsendBeacon\b/],
+  ["importScripts", /\bimportScripts\b/],
+  ["dynamic import()", /\bimport\s*\(/],
+  ["import from a URL", /\bimport\b[^;\n]*\bfrom\b[^;\n]*(:\/\/|["'`]\/\/)/],
+  ["Worker", /\b(Shared)?Worker\s*\(/],
+  ["serviceWorker", /\bserviceWorker\b/],
+  ["RTCPeerConnection", /\bRTCPeerConnection\b/],
+  ["eval", /\beval\s*\(/],
+  ["Function constructor", /\bnew\s+Function\b/],
+  ["scripting API (code in pages)", /\bscripting\b/],
+  ["executeScript (code in pages)", /\bexecuteScript\b/],
+  ["insertCSS/removeCSS (code in pages)", /\b(insert|remove)CSS\b/],
+  ["registerContentScripts (code in pages)", /\b(register|update)ContentScripts\b/],
+  ["userScripts (code in pages)", /\buserScripts\b/],
+  ["protocol-relative URL", /["'`]\/\/[a-z0-9]/i],
+];
 // The only declaration the stylesheets may contain.
 const DECLARATION = "{display:none!important}";
 
@@ -63,17 +100,28 @@ function walkStrings(value, visit, at = "") {
   }
 }
 
+// URLs (scheme://...) in a text, except the allowed browser-internal ones.
+function remoteUrls(text) {
+  return [...text.matchAll(/[a-z][a-z0-9+.-]*:\/\/[^\s"'`<>)]*/gi)]
+    .map((m) => m[0])
+    .filter((url) => !ALLOWED_INTERNAL_URLS.has(url));
+}
+
 const rel = (file) => path.relative(DIST, file).split(path.sep).join("/");
 // Chromium writes its ruleset index into _metadata/ when dist/ is loaded
 // unpacked; that is Chromium's, not ours.
 const files = (await listFiles(DIST)).filter((file) => !rel(file).startsWith("_metadata/"));
+const names = new Set(files.map(rel));
 
-// 1. Only data files: no scripts, pages or wasm that could run.
+// 1. Only known file types, and code only where the design allows it.
 for (const file of files) {
-  if (!ALLOWED_EXTENSIONS.has(path.extname(file))) fail(`unexpected file type: ${rel(file)}`);
+  const ext = path.extname(file);
+  if (!ALLOWED_EXTENSIONS.has(ext)) fail(`unexpected file type: ${rel(file)}`);
+  if (ext === ".js" && !ALLOWED_SCRIPTS.has(rel(file))) fail(`script not allowed: ${rel(file)}`);
+  if (ext === ".html" && !ALLOWED_PAGES.has(rel(file))) fail(`page not allowed: ${rel(file)}`);
 }
 
-// 2. Manifest: minimum permissions, no remote anything, no code.
+// 2. Manifest: minimum permissions, no remote anything, no code in pages.
 const manifest = JSON.parse(await readFile(path.join(DIST, "manifest.json"), "utf8"));
 if (manifest.manifest_version !== 3) fail("manifest_version must be 3");
 for (const key of Object.keys(manifest)) {
@@ -84,9 +132,22 @@ for (const permission of manifest.permissions ?? []) {
 }
 if (manifest.background) fail("no background scripts allowed");
 if (manifest.host_permissions) fail("no host permissions allowed");
+if (manifest.optional_permissions || manifest.optional_host_permissions) fail("no optional permissions allowed");
 walkStrings(manifest, (at, value) => {
   if (!at.startsWith("content_scripts") && URL_PATTERN.test(value)) fail(`URL in manifest at ${at}: ${value}`);
 });
+for (const [size, file] of Object.entries(manifest.icons ?? {})) {
+  if (!file.endsWith(".png") || !names.has(file)) fail(`icons.${size}: missing PNG ${file}`);
+}
+const action = manifest.action ?? {};
+for (const key of Object.keys(action)) {
+  if (!ALLOWED_ACTION_KEYS.has(key)) fail(`action key not allowed: ${key}`);
+}
+for (const [size, file] of Object.entries(action.default_icon ?? {})) {
+  if (!file.endsWith(".png") || !names.has(file)) fail(`action.default_icon.${size}: missing PNG ${file}`);
+}
+if (action.default_popup && !ALLOWED_PAGES.has(action.default_popup)) fail(`action.default_popup must be one of ${[...ALLOWED_PAGES]}`);
+if (action.default_popup && !names.has(action.default_popup)) fail(`action.default_popup: missing ${action.default_popup}`);
 
 // 3. Content scripts: CSS only, applied by match patterns, no JavaScript.
 const cssFiles = new Set(files.filter((file) => path.extname(file) === ".css").map(rel));
@@ -137,7 +198,48 @@ for (const file of [...cssFiles].sort()) {
   }
 }
 
-// 5. Rulesets: allowed actions only; URLs may appear only as match patterns.
+// 5. The extension's own pages and scripts: local, self-contained, offline.
+// A page may load only the allowed scripts and local images and styles; a
+// script may not reach the network, load code, or run code in a web page.
+const pages = files.filter((file) => path.extname(file) === ".html").map(rel);
+const scripts = files.filter((file) => path.extname(file) === ".js").map(rel);
+const referencedScripts = new Set();
+for (const page of pages) {
+  const html = await readFile(path.join(DIST, page), "utf8");
+  for (const url of remoteUrls(html)) fail(`${page}: URL in page: ${url}`);
+  if (/["'`]\/\/[a-z0-9]/i.test(html)) fail(`${page}: protocol-relative URL in page`);
+  for (const [, attributes, body] of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
+    const src = /\bsrc\s*=\s*["']([^"']*)["']/i.exec(attributes)?.[1];
+    if (!src) fail(`${page}: inline script`);
+    else if (!ALLOWED_SCRIPTS.has(src) || !names.has(src)) fail(`${page}: script not allowed: ${src}`);
+    else referencedScripts.add(src);
+    if (body.trim()) fail(`${page}: inline script body`);
+    if (/\btype\s*=\s*["']module["']/i.test(attributes)) fail(`${page}: module scripts are not allowed (imports)`);
+  }
+  for (const [, tag] of html.matchAll(/<(link|iframe|frame|object|embed|base|form|audio|video|source)\b/gi)) {
+    fail(`${page}: <${tag}> is not allowed`);
+  }
+  if (/<meta\b[^>]*http-equiv/i.test(html)) fail(`${page}: <meta http-equiv> is not allowed`);
+  if (/\son[a-z]+\s*=/i.test(html)) fail(`${page}: inline event handler`);
+  for (const [, src] of html.matchAll(/<img\b[^>]*\bsrc\s*=\s*["']([^"']*)["']/gi)) {
+    if (!src.endsWith(".png") || !names.has(src)) fail(`${page}: image must be a bundled PNG: ${src}`);
+  }
+  if (/url\(/i.test(html)) fail(`${page}: url() in page styles`);
+}
+let scriptBytes = 0;
+for (const script of scripts) {
+  const text = await readFile(path.join(DIST, script), "utf8");
+  scriptBytes += Buffer.byteLength(text);
+  if (!referencedScripts.has(script)) fail(`script not used by any page: ${script}`);
+  for (const url of remoteUrls(text)) fail(`${script}: URL in script: ${url}`);
+  for (const [name, pattern] of FORBIDDEN_IN_SCRIPTS) {
+    const match = pattern.exec(text);
+    if (match) fail(`${script}: ${name} is not allowed (at "${match[0].trim()}")`);
+  }
+}
+
+// 6. Rulesets: allowed actions only, ids split by action, URLs only as
+// match patterns.
 const resources = manifest.declarative_net_request?.rule_resources ?? [];
 const rulesetPaths = new Set(resources.map((r) => path.join(DIST, r.path)));
 const summary = [];
@@ -150,10 +252,15 @@ for (const resource of resources) {
   const ids = new Set();
   let regexRules = 0;
   let patternUrls = 0;
+  let maxPriority = 0;
   for (const rule of rules) {
     if (!Number.isInteger(rule.id) || rule.id < 1 || ids.has(rule.id)) fail(`${resource.id}: bad or duplicate id ${rule.id}`);
     ids.add(rule.id);
     if (!ALLOWED_ACTIONS.has(rule.action?.type)) fail(`${resource.id}: rule ${rule.id} has action ${rule.action?.type}`);
+    if ((rule.action?.type === "block") !== rule.id < FIRST_ALLOW_RULE_ID) {
+      fail(`${resource.id}: rule ${rule.id} (${rule.action?.type}) is in the wrong id range`);
+    }
+    maxPriority = Math.max(maxPriority, rule.priority ?? 1);
     if (rule.condition?.regexFilter) regexRules++;
     walkStrings(rule, (at, value) => {
       if (!URL_PATTERN.test(value)) return;
@@ -162,15 +269,17 @@ for (const resource of resources) {
     });
   }
   if (regexRules > LIMITS.MAX_NUMBER_OF_REGEX_RULES) fail(`${resource.id}: ${regexRules} regex rules exceeds ${LIMITS.MAX_NUMBER_OF_REGEX_RULES}`);
+  // The popup's switch rule must outrank every static rule.
+  if (maxPriority >= 1_000_000) fail(`${resource.id}: priority ${maxPriority} reaches the switch rule's priority`);
   if (resource.enabled) {
     enabledRules += rules.length;
     enabledRulesets++;
   }
   const { size } = await stat(file);
-  summary.push({ ruleset: resource.id, enabled: resource.enabled, rules: rules.length, regexRules, patternUrls, bytes: size });
+  summary.push({ ruleset: resource.id, enabled: resource.enabled, rules: rules.length, regexRules, patternUrls, maxPriority, bytes: size });
 }
 
-// 6. Anything else must be documentation; report any URLs it mentions.
+// 7. Anything else must be documentation; report any URLs it mentions.
 const docUrls = [];
 for (const file of files) {
   if (rulesetPaths.has(file) || rel(file) === "manifest.json" || path.extname(file) !== ".txt") continue;
@@ -178,7 +287,7 @@ for (const file of files) {
   for (const match of text.matchAll(/[a-z][a-z0-9+.-]*:\/\/\S+/gi)) docUrls.push(`${rel(file)}: ${match[0]}`);
 }
 
-// 7. Chrome limits.
+// 8. Chrome limits.
 const totalRegex = summary.reduce((n, s) => n + s.regexRules, 0);
 if (resources.length > LIMITS.MAX_NUMBER_OF_STATIC_RULESETS) fail(`${resources.length} static rulesets exceeds ${LIMITS.MAX_NUMBER_OF_STATIC_RULESETS}`);
 if (enabledRulesets > LIMITS.MAX_NUMBER_OF_ENABLED_STATIC_RULESETS) fail(`${enabledRulesets} enabled rulesets exceeds ${LIMITS.MAX_NUMBER_OF_ENABLED_STATIC_RULESETS}`);
@@ -190,7 +299,7 @@ if (enabledRules > LIMITS.GUARANTEED_MINIMUM_STATIC_RULES) {
 }
 
 console.table(summary);
-console.log(`Files: ${files.length} (${cssFiles.size} stylesheets)`);
+console.log(`Files: ${files.length} (${cssFiles.size} stylesheets, ${pages.length} page, ${scripts.length} script)`);
 console.log(`Permissions: ${JSON.stringify(manifest.permissions ?? [])}`);
 console.log(
   `Content scripts: ${contentScripts.length} entries, CSS only (no js key anywhere), ` +
@@ -198,16 +307,20 @@ console.log(
 );
 console.log(`Stylesheets: ${cssRules} rules, ${cssSelectors} selectors, ${cssBytes} bytes, every declaration is ${DECLARATION}`);
 console.log(
+  `Scripts: ${scripts.join(", ") || "none"} (${scriptBytes} bytes), loaded only by ${pages.join(", ") || "no page"}; ` +
+    "no network API, no remote URL, no code in pages, no background worker",
+);
+console.log(
   `Enabled static rules: ${enabledRules} of ${LIMITS.GUARANTEED_MINIMUM_STATIC_RULES} guaranteed ` +
     `(${(LIMITS.GUARANTEED_MINIMUM_STATIC_RULES - enabledRules).toLocaleString("en")} headroom, ` +
     `${((enabledRules / LIMITS.GUARANTEED_MINIMUM_STATIC_RULES) * 100).toFixed(1)}% used)`,
 );
 console.log(`Regex rules: ${totalRegex} in total (limit ${LIMITS.MAX_NUMBER_OF_REGEX_RULES} per ruleset)`);
-console.log(`Rulesets: ${resources.length} static, ${enabledRulesets} enabled`);
+console.log(`Rulesets: ${resources.length} static, ${enabledRulesets} enabled; block rule ids < ${FIRST_ALLOW_RULE_ID} <= allow rule ids`);
 console.log(`URLs in documentation files (never loaded): ${docUrls.length ? "\n  " + docUrls.join("\n  ") : "none"}`);
 for (const warning of warnings) console.warn(`WARNING: ${warning}`);
 if (errors.length) {
   console.error(`FAILED:\n  ${errors.slice(0, 30).join("\n  ")}${errors.length > 30 ? `\n  ... ${errors.length - 30} more` : ""}`);
   process.exit(1);
 }
-console.log("OK: no executable files, no JavaScript in pages, no remote URLs outside match patterns, minimum permissions, within limits");
+console.log("OK: JavaScript only in the popup, no network APIs, no remote URLs outside match patterns, minimum permissions, within limits");

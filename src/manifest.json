@@ -1,12 +1,27 @@
 {
   "manifest_version": 3,
   "name": "add-block",
-  "version": "0.2.0",
-  "description": "Personal ad and tracker blocker. Bundled EasyList and EasyPrivacy rules: network blocking plus CSS-only element hiding.",
+  "version": "0.3.0",
+  "description": "Personal ad and tracker blocker. Bundled EasyList and EasyPrivacy rules: network blocking plus CSS-only element hiding, with a per-site switch.",
   "minimum_chrome_version": "118",
+  "icons": {
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
   "permissions": [
-    "declarativeNetRequest"
+    "declarativeNetRequest",
+    "activeTab"
   ],
+  "action": {
+    "default_title": "add-block",
+    "default_icon": {
+      "16": "icons/16.png",
+      "32": "icons/32.png"
+    },
+    "default_popup": "popup.html"
+  },
   "declarative_net_request": {
     "rule_resources": [
       {

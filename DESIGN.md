@@ -2,7 +2,8 @@
 
 A personal ad and tracker blocker for Chrome, Edge and Safari, built from one
 Manifest V3 codebase. v0.1 targets Chrome and does network blocking only.
-v0.2 adds element hiding with static CSS.
+v0.2 adds element hiding with static CSS. v0.3 adds a toolbar popup with a
+per-site switch, a blocked-request count, and icons.
 
 ## Invariants
 
@@ -17,12 +18,17 @@ change needs to break one, update this file first and say why.
   matches requests against the rules itself; the extension never sees URLs,
   page content or any other browsing data. No `webRequest`, no
   `declarativeNetRequestFeedback`, no host permissions.
-- The extension contains no executable code at all: `dist/` is a manifest,
-  two JSON rulesets, two CSS files and a licence notice.
-- If code is added later, it must not use `fetch`, `XMLHttpRequest`,
-  `WebSocket`, `sendBeacon`, remote `import`/`importScripts`, or remote URLs
-  in pages or the manifest (`update_url`, `homepage_url`, remote CSP sources
-  and the like).
+- **JavaScript only in the extension's own popup.** Since v0.3 `dist/`
+  holds one page (`popup.html`) and one script (`popup.js`), which run only
+  when the toolbar button is clicked, inside the extension's own popup.
+  There is no background worker (nothing runs between clicks) and no code
+  in web pages. The script uses none of `fetch`, `XMLHttpRequest`,
+  `WebSocket`, `EventSource`, `sendBeacon`, `importScripts`, dynamic
+  `import()`, workers, `eval` or the `scripting` API, and no remote URL; the
+  only URL it knows is the browser-internal `chrome://extensions/?id=` page
+  it can open in a tab.
+  The manifest has no remote URLs either (`update_url`, `homepage_url`,
+  remote CSP sources and the like).
 - **CSS only in pages.** The only thing the extension puts into a web page
   is static CSS from `content_scripts` entries with a `css` key. No `js`
   key, no `scripting` permission, no background worker that could inject
@@ -30,18 +36,35 @@ change needs to break one, update this file first and say why.
   and nothing else: no `@import`, no `url()`, no other declarations. CSS
   cannot read the page or send anything, so the extension still sees no
   browsing data.
-- `npm run check` enforces this on `dist/`: only data files (`.json`, `.txt`,
-  `.png`, `.css`), no URL anywhere in the manifest outside match patterns,
-  rule actions limited to `block`/`allow`/`allowAllRequests`, URLs in
-  rulesets only inside `urlFilter`/`regexFilter` match patterns, no
-  `background`, no `js` in any content script, and every stylesheet rule
-  re-parsed by the selector validator with exactly the one declaration.
-  `npm test` proves that the check fails on a `js` entry.
+- `npm run check` enforces this on `dist/`: only known file types
+  (`.json`, `.txt`, `.png`, `.css`, `.html`, `.js`); the only page is
+  `popup.html` and the only script is `popup.js`; the page loads only that
+  script and bundled PNGs, with no inline script, module, `<link>`,
+  `<iframe>`, event handler or `url()`; the script contains none of the
+  network, code-loading or page-scripting APIs above (matched as words
+  anywhere in the file, comments and strings included) and no URL other
+  than the allowed internal one; no URL anywhere in the manifest outside
+  match patterns; rule actions limited to `block`/`allow`/`allowAllRequests`;
+  URLs in rulesets only inside `urlFilter`/`regexFilter` match patterns; no
+  `background`, no `host_permissions`, no optional permissions, no `js` in
+  any content script; and every stylesheet rule re-parsed by the selector
+  validator with exactly the one declaration. `npm test` proves that the
+  check fails on each of these: a `js` content script, a background worker,
+  every listed network API, a remote or protocol-relative URL, the
+  `scripting` API, `eval`, a remote or inline script in the page, a second
+  page, a permission outside the allowlist, and a rule id in the wrong
+  range (see the per-site switch below).
 
 ### 2. Minimum permissions
 
-- The extension asks for `declarativeNetRequest` and nothing else in
-  `permissions`: no host permissions, no background worker, no popup.
+- The extension asks for `declarativeNetRequest` and `activeTab` in
+  `permissions`: no host permissions, no `tabs`, no `storage`, no
+  `declarativeNetRequestFeedback`, no background worker. `activeTab` has no
+  install warning. It gives the popup, for the one tab the button was
+  clicked on and until that tab navigates elsewhere, the tab's URL and the
+  right to ask which rules matched in it. Chrome's own error message names
+  the alternative: `declarativeNetRequestFeedback`, whose warning is "Read
+  your browsing history" and which covers every tab, all the time.
 - The CSS content scripts match `<all_urls>`. Chrome counts that as site
   access ("On all sites" in the extension's details, where the user can
   restrict it to chosen sites or to a click). A packaged install shows the
@@ -61,6 +84,15 @@ change needs to break one, update this file first and say why.
 | `declarativeNetRequest` | 0.1 | Static rulesets. Block/allow rules need no host permissions. |
 | `minimum_chrome_version: 118` | 0.1 | abp2dnr leaves out `isUrlFilterCaseSensitive: false`, which only became the default in Chrome 118. |
 | `content_scripts` with `css`, `matches: ["<all_urls>"]` | 0.2 | Element hiding from EasyList's generic cosmetic filters, as static CSS. Implies site access to all sites (see above). Keys limited to `matches`, `exclude_matches`, `css`, `run_at`, `all_frames`. |
+| `activeTab` | 0.3 | The popup needs the current tab's site (its URL) and its matched rules. No warning; granted per click, per tab. Content scripts on `<all_urls>` do not expose tab URLs (tested), so there is no way around it. |
+| `action` (`default_popup`, `default_icon`, `default_title`) | 0.3 | The toolbar button and its popup. Keys limited to those three. |
+| `icons` | 0.3 | Toolbar, extension list, stores. Bundled PNGs only. |
+
+Chrome's wording, unchanged from v0.2 and asserted by `npm test`:
+permission message "Block content on any page" (`declarativeNetRequest`)
+and site access "On all sites" (the CSS content scripts; a packaged
+install words it "Read and change all your data on all websites").
+`activeTab`, `action` and `icons` add no message.
 
 ### 3. Pinned, reproducible filter lists
 
@@ -90,10 +122,13 @@ change needs to break one, update this file first and say why.
 
 ### 4. One source folder
 
-- `src/` holds everything that ships in the extension. The build copies it
-  to `dist/`, adds the generated rulesets and stylesheets, and appends the
-  generated `content_scripts` entries to the manifest. Nothing in `dist/`
-  is edited by hand.
+- `src/` holds everything that ships in the extension: the manifest, the
+  popup page and script, the icon PNGs and the licence notice. The build
+  copies it to `dist/`, adds the generated rulesets and stylesheets, and
+  appends the generated `content_scripts` entries to the manifest. Nothing
+  in `dist/` is edited by hand. The icon PNGs are rendered from
+  `icons/add-block.svg` by `npm run icons` (Playwright's Chromium) and
+  committed; `npm run build` only copies them.
 - `dist/` is the same for every browser. Only packaging differs: a zip of
   `dist/` for Chrome and Edge, and an Xcode app wrapping `dist/` for Safari.
 - If Safari needs a different rule dialect (see below), that is a
@@ -125,12 +160,16 @@ npm run build          for each pinned list:
                          remove duplicate rules
                          merge host-only rules into requestDomains rules
                          check that expanding the merge gives the unmerged rules back
+                         number block rules from 1 and allow rules from 1,000,000
                        turn the generic cosmetic filters of all lists into CSS
                        write dist/rulesets/<id>.json, dist/css/generic/*.css,
                          dist/manifest.json (with content_scripts) and build-report.json
 npm run check          invariants and Chrome limits, on dist/
 npm test               Playwright + Chromium: load dist/, check blocking, hiding,
-                         stylesheet parsing, merge equivalence, and that check rejects js
+                         stylesheet parsing, merge equivalence, the popup and its
+                         switch (off, on, after a restart), Chrome's site access
+                         setting, and that check rejects code where it is not allowed
+npm run icons          render icons/add-block.svg to src/icons/*.png and icons/add-block-512.png
 ```
 
 `build-report.json` records, per list, how many filters were converted,
@@ -194,6 +233,13 @@ Applied by `scripts/build.mjs` after conversion:
    host (the host, a subdomain with a path, and two look-alike hosts that
    must not match), about 360,000 requests, and fails on any difference. In
    the v0.2 run there was none.
+5. **Ids by action.** Block rules are numbered from 1 in list order, allow
+   and `allowAllRequests` rules from 1,000,000. The popup learns about
+   blocked requests only as matched rule ids (`getMatchedRules` gives
+   `rulesetId` and `ruleId`, nothing else), and it has no way to read a
+   static ruleset without `fetch`, which it may not use. The id range says
+   whether a matched rule blocked the request. `npm run check` verifies the
+   split; the constant lives in `build.mjs`, `check.mjs` and `popup.js`.
 
 ## Element hiding: generic cosmetic filters as CSS
 
@@ -248,15 +294,102 @@ Chromium parses it in about 6 ms. In the test, a trivial page loads in a
 median of 15 ms without the extension and 27 ms with it. The styles reach
 every frame, so pages with many iframes pay that per frame.
 
+## Popup and per-site switch
+
+The toolbar button opens `popup.html`, which shows the current site, a
+switch for request blocking on that site, and the number of requests
+blocked in the tab. Everything it needs is already in the browser, which is
+why there is no background worker and no `storage` permission:
+
+- **Site.** `tabs.query({ active: true, lastFocusedWindow: true })` gives
+  the tab; its `url` is visible because the click that opened the popup
+  granted `activeTab` for that tab. The site is the URL's host without a
+  leading `www.`; only `http` and `https` pages have a switch. Opened any
+  other way (or on a `chrome://` or `file:` page) the popup says so and
+  disables the switch.
+- **Switch = dynamic rules.** A site that is off has two dynamic
+  `declarativeNetRequest` rules, both with priority 1,000,000 (every static
+  rule is at 2,010 or below, which `npm run check` verifies):
+  1. `allowAllRequests` for `main_frame` requests with `requestDomains:
+     [site]`. Once the page's own request has matched, the browser allows
+     every request in that frame hierarchy, nested iframes included.
+  2. `allow` for requests with `initiatorDomains: [site]`, all resource
+     types. Rule 1 works through the browser's per-frame bookkeeping, and
+     in the test the first requests of a fast, cached page load were
+     sometimes evaluated before that bookkeeping caught up and got blocked.
+     Rule 2 is matched request by request and closes the gap for requests
+     the site's own documents make.
+
+  Both cover the site's subdomains. The browser stores dynamic rules, so
+  the setting survives restarts, and the popup reads the state back from
+  `getDynamicRules()` rather than keeping a list of its own. Turning a site
+  on removes its rules. After a change the popup reloads the tab. Chrome
+  allows 30,000 dynamic rules (`MAX_NUMBER_OF_DYNAMIC_AND_SESSION_RULES`;
+  `allow` and `allowAllRequests` count as "safe", so the 5,000 limit for
+  unsafe rules does not apply): 15,000 sites off, which nobody will reach.
+- **Count.** `getMatchedRules({ tabId })` lists the rules matched for the
+  tab, which `activeTab` permits for that tab. The popup counts matches of
+  static rules with a block id (see "Ids by action"); matches of allow
+  rules and of the switch's own rules are not blocked requests. Chrome
+  keeps matches for the tab's current document and drops older ones after
+  five minutes, so the number is "since this page was opened" and can
+  include a few from a page the tab showed shortly before. Chrome limits
+  the call to 20 per 10 minutes per extension; a popup open costs one call
+  (two with the reload after a switch). When the call fails, or the API is
+  missing (Safari), the popup shows "n/a" with the reason in its tooltip.
+  The alternative, `declarativeNetRequestFeedback`, would give the same
+  count for every tab at all times with the warning "Read your browsing
+  history", so it is not used.
+- **Element hiding is not switched.** The CSS is a static `content_scripts`
+  entry, and nothing short of the `scripting` permission plus host
+  permissions, or a background worker that registers content scripts, can
+  change where a static entry applies. Both are ruled out above. What the
+  switch turns off is request blocking; the popup says so when a site is
+  off. Chrome's own site access setting for the extension does the rest:
+  `chrome://extensions` → add-block → Details → Site access → "On specific
+  sites" applies the content scripts only to the listed sites (or "On
+  click" applies them only where the button is clicked), and request
+  blocking does not depend on site access, so it keeps working everywhere.
+  `npm test` sets "On specific sites" through `chrome.developerPrivate` and
+  checks exactly that: CSS on the listed site only, requests blocked on
+  both. The popup's "site access" link opens the extension's details page.
+  Chrome has no per-extension "all sites except this one" option. Chrome's
+  per-site "restricted sites" list would be the direct answer, but the API
+  behind it (`developerPrivate.addUserSpecifiedSites`) is a no-op in the
+  Chromium used for the tests, with or without the
+  `ExtensionsMenuAccessControl` feature, so it is not documented as a route.
+
+Test automation cannot click the toolbar button (`action.openPopup()` from
+a worker opens the popup but does not grant `activeTab`, and a keyboard
+command sent through the DevTools protocol does not reach Chrome's
+accelerators), so the popup tests load a copy of `dist/` with the `tabs` and
+`declarativeNetRequestFeedback` permissions, which give every tab what
+`activeTab` gives the clicked one, plus an empty worker that opens
+`popup.html` in an unfocused window. The popup page and script are the
+shipped ones, unchanged. A second test loads a copy without those
+permissions and checks the popup's "no site" state and Chrome's error text
+for `getMatchedRules`.
+
+## Icons
+
+`icons/add-block.svg` is original artwork for this project: a blue tile
+with a white "no" sign. `npm run icons` renders it with Playwright's
+Chromium to `src/icons/{16,32,48,128}.png` (manifest `icons` and the
+toolbar `default_icon`) and `icons/add-block-512.png` (store listings and
+the Safari app icon; not shipped in `dist/`). The PNGs are committed and
+only change when the script is run.
+
 ## Chrome limits
 
-| Limit (`chrome.declarativeNetRequest`) | Value | v0.1 uses |
+| Limit (`chrome.declarativeNetRequest`) | Value | Used |
 | --- | --- | --- |
 | `GUARANTEED_MINIMUM_STATIC_RULES` | 30,000 | 12,943 (43%) |
 | Shared global static pool beyond that | 300,000 for all extensions | not needed |
 | `MAX_NUMBER_OF_REGEX_RULES` (per ruleset) | 1,000 | 4 and 6 |
 | `MAX_NUMBER_OF_STATIC_RULESETS` | 100 | 2 |
 | `MAX_NUMBER_OF_ENABLED_STATIC_RULESETS` | 50 | 2 |
+| `MAX_NUMBER_OF_DYNAMIC_AND_SESSION_RULES` | 30,000 | 2 per site switched off |
+| `MAX_GETMATCHEDRULES_CALLS_PER_INTERVAL` | 20 per 10 minutes | 1 per popup open, 2 per switch |
 
 Staying under the guaranteed 30,000 means both rulesets are always enabled,
 whatever other extensions are installed. In the test run, Chromium 153
@@ -285,7 +418,8 @@ unpacked. For the Edge Add-ons store, upload a zip of `dist/`.
 **Safari** needs work beyond packaging:
 - Packaging: `xcrun safari-web-extension-converter dist/` produces an Xcode
   project. That needs macOS and Xcode, and the extension ships inside a
-  small app. The store and Xcode also want icons, which v0.1 does not have.
+  small app. The store and Xcode also want icons: `src/icons/` has 16 to
+  128 and `icons/add-block-512.png` the large one.
 - Rule dialect: abp2dnr's Safari mode rewrites `allowAllRequests` to
   `allow`, `initiatorDomains` to `domains` and `excludedInitiatorDomains` to
   `excludedDomains`, and drops `webbundle`. That suggests Safari lacks these
@@ -305,3 +439,13 @@ unpacked. For the Edge Add-ons store, upload a zip of `dist/`.
   also has a native alternative, a content blocker `css-display-none`
   action, that does not need any site access; a Safari package could
   convert the stylesheets into that at packaging time.
+- Popup: Safari supports `action` popups, `activeTab`, `tabs.query`,
+  `tabs.reload` and dynamic DNR rules (`updateDynamicRules`,
+  `getDynamicRules`), so the switch should work. Safari's dynamic rule
+  limit is lower than Chrome's (check it; two rules per site). Safari's
+  Safari-mode conversion turns `allowAllRequests` into `allow`; the
+  per-request `allow` rule (rule 2) then carries the switch. Safari has no
+  `getMatchedRules`, so the count shows "n/a" with that reason. The "site
+  access" link opens a `chrome://` page and does nothing in Safari; Safari's
+  own per-site permission prompt is the equivalent. Safari also shows its
+  own permission wording for `activeTab` and the content scripts.

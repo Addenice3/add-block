@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- add-block icon: a blue tile with a white "no" sign. Original artwork for this project. -->
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="#2563eb"/>
+  <circle cx="256" cy="256" r="150" fill="none" stroke="#ffffff" stroke-width="56"/>
+  <line x1="150" y1="150" x2="362" y2="362" stroke="#ffffff" stroke-width="56" stroke-linecap="round"/>
+</svg>

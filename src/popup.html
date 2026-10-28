@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>add-block</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --line: #d0d7de;
+    --accent: #2563eb;
+    --off: #8b949e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg: #e6edf3; --muted: #9da7b1; --bg: #1c2128; --line: #3d444d; --off: #6e7681; }
+  }
+  html, body { margin: 0; }
+  body {
+    width: 280px;
+    padding: 14px 16px 12px;
+    font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--fg);
+    background: var(--bg);
+  }
+  h1 {
+    margin: 0 0 10px;
+    font-size: 14px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  h1 img { width: 20px; height: 20px; }
+  .row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 0;
+    border-top: 1px solid var(--line);
+  }
+  .site { font-weight: 600; overflow-wrap: anywhere; }
+  .label { color: var(--muted); }
+  .value { font-variant-numeric: tabular-nums; }
+  .switch { position: relative; width: 40px; height: 22px; flex: none; }
+  .switch input {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    margin: 0; opacity: 0; cursor: pointer; z-index: 1;
+  }
+  .switch input:disabled { cursor: default; }
+  .switch span {
+    position: absolute; inset: 0;
+    border-radius: 11px;
+    background: var(--off);
+    transition: background .15s;
+  }
+  .switch span::after {
+    content: "";
+    position: absolute; top: 3px; left: 3px;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform .15s;
+  }
+  .switch input:checked + span { background: var(--accent); }
+  .switch input:checked + span::after { transform: translateX(18px); }
+  .switch input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .switch input:disabled + span { opacity: .5; }
+  p { margin: 8px 0 0; color: var(--muted); }
+  button.link {
+    padding: 0; border: 0; background: none;
+    color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline;
+  }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+  <h1><img src="icons/32.png" alt="">add-block</h1>
+  <div class="row">
+    <div>
+      <div class="label" id="site-label">This site</div>
+      <div class="site" id="site">…</div>
+    </div>
+    <label class="switch" title="Block ads and trackers on this site">
+      <input type="checkbox" role="switch" id="switch" disabled>
+      <span></span>
+    </label>
+  </div>
+  <div class="row" id="count-row" hidden>
+    <span class="label">Blocked in this tab</span>
+    <span class="value" id="count">–</span>
+  </div>
+  <p id="note"></p>
+  <p id="off-note" hidden>
+    Requests from this site are no longer blocked. Element hiding still
+    applies. Chrome can limit it to sites you choose under
+    <button class="link" id="site-settings" type="button">site access</button>.
+  </p>
+  <script src="popup.js"></script>
+</body>
+</html>

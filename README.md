@@ -3,14 +3,16 @@
 A personal ad and tracker blocker for Chrome (Edge and Safari later), built
 on Manifest V3 `declarativeNetRequest`. It bundles EasyList and EasyPrivacy as
 static rulesets, and EasyList's generic element-hiding filters as static
-CSS. It makes no network requests, runs no code (not in the extension, not
-in pages), has no telemetry, and asks for a single permission:
-`declarativeNetRequest`.
+CSS. It makes no network requests, runs no code in web pages, has no
+telemetry, and asks for two permissions: `declarativeNetRequest` and
+`activeTab` (no warning; used by the popup for the current tab only).
 
-v0.2 blocks requests and hides leftover ad elements that EasyList's generic
-cosmetic filters name. Site-specific cosmetic filters are not included (see
-DESIGN.md for why). There is no popup or settings page. See
-[DESIGN.md](DESIGN.md) for the invariants and decisions.
+v0.3 blocks requests, hides leftover ad elements that EasyList's generic
+cosmetic filters name, and has a toolbar button with a popup: the current
+site, a switch to turn blocking off or on for that site, and the number of
+requests blocked in the tab. Site-specific cosmetic filters are not
+included (see DESIGN.md for why). See [DESIGN.md](DESIGN.md) for the
+invariants and decisions.
 
 ## Install in Chrome without building
 
@@ -28,12 +30,44 @@ DESIGN.md for why). There is no popup or settings page. See
    page). A packaged install would word the latter as "Read and change all
    your data on all websites"; the CSS can do neither. You can restrict
    site access there; request blocking keeps working everywhere.
+6. Click the puzzle icon in the toolbar and pin add-block to see its button.
 
-There is no toolbar button. To update, pull or download the repository again
-and click the reload icon on the extension's card.
+To update, pull or download the repository again and click the reload icon
+on the extension's card. Sites you switched off stay off: the setting is
+stored by the browser, not in the extension's files.
 
 Edge should work the same way through `edge://extensions` → **Load unpacked**,
 but it has not been tested yet.
+
+## The popup
+
+Click the add-block button on a web page:
+
+- **This site** shows the site of the page (its host, without `www.`).
+- **The switch** turns request blocking off or on for that site and its
+  subdomains, then reloads the page. Off means: the page and everything in
+  it, iframes included, loads unblocked. The setting is kept by the browser
+  and survives restarts. Turn the switch back on to remove it.
+- **Blocked in this tab** counts the requests the bundled rules blocked
+  since the page was opened. It is 0 on a site that is off. It shows "n/a"
+  with a reason in its tooltip when the browser cannot say (Safari, or
+  more than 20 popup opens in 10 minutes).
+
+On a `chrome://` page, a file, or when the popup is opened without clicking
+the button on a page, there is no site and the switch is disabled.
+
+### Element hiding on a site that is off
+
+The switch stops request blocking only. The element-hiding CSS still
+applies, because it is a static part of the manifest and changing where it
+applies would need code in pages or broad permissions (DESIGN.md explains).
+Chrome's own setting covers it: open `chrome://extensions`, click
+**Details** on add-block (the popup's "site access" link takes you there),
+and under **Site access** choose **On specific sites** and list the sites
+where you want element hiding, or **On click** to have it only on pages
+where you click the button. Request blocking does not depend on site
+access and keeps working everywhere, with the switch deciding per site.
+Chrome has no "all sites except this one" option for an extension.
 
 ## Sites to test on
 
@@ -67,8 +101,9 @@ headers unless they are already present.
 ```sh
 npm ci            # install the pinned converter and test tools
 npm run build     # fetch the pinned lists (cached in .cache/), write dist/ and build-report.json
-npm run check     # verify permissions, no code in pages, no remote URLs, Chrome rule limits
-npm test          # load dist/ in Chromium (Playwright): blocking, hiding, merge check
+npm run check     # verify permissions, code only in the popup, no network APIs or remote URLs, Chrome rule limits
+npm test          # load dist/ in Chromium (Playwright): blocking, hiding, merge check, popup and switch
+npm run icons     # only after editing icons/add-block.svg: re-render the PNGs
 ```
 
 `npm test` needs a Playwright Chromium: `npx playwright install chromium`.
@@ -102,6 +137,8 @@ Lists pinned at version 202610270115 (27 Oct 2026). Details are in
 That is 12,943 rules in total, 43% of the 30,000 static rules Chrome
 guarantees to every extension. Most dropped network filters are `$popup`
 (2,969) and `$document` page blocks (569), which have no DNR equivalent.
+Block rules have ids from 1, allow rules from 1,000,000, so the popup can
+tell them apart in `getMatchedRules` results.
 
 Of the 24,915 cosmetic filters, 13,636 generic selectors ship as CSS
 (224 KB in two files), honouring 337 `#@#` exceptions and 163
@@ -112,9 +149,10 @@ patterns a match pattern cannot express.
 ## Layout
 
 ```
-src/                 everything that ships: manifest.json, THIRD_PARTY_NOTICES.txt
+src/                 everything that ships: manifest.json, popup.html, popup.js, icons/, THIRD_PARTY_NOTICES.txt
 dist/                built extension (committed); load this folder
-scripts/             update-lists, build (with cosmetic, merge, selector), check
+icons/               add-block.svg (icon source) and the 512 px PNG for stores
+scripts/             update-lists, build (with cosmetic, merge, selector), check, icons
 test/                Playwright test
 lists.lock.json      pinned list versions: URL, commit, date, SHA-256
 build-report.json    rule counts and dropped filters by reason
