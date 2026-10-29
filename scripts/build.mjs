@@ -242,8 +242,10 @@ for (const r of report.safari.rulesets) {
 const cb = report.safari.contentBlockerStats;
 console.log(
   `safari content blocker: ${cb.rules} rules for ${cb.selectors} selectors (${cb.genericRules} generic, ` +
-    `${cb.exceptionRules} with exceptions in ${cb.exceptionGroups} domain sets, ${cb.ignoreRules} ignore rule for ` +
-    `${cb.hidingOffDomains} domains; ${cb.bytes} bytes)`,
+    `${cb.exceptionRules} with exceptions in ${cb.exceptionGroups} domain sets, ${cb.specificRules} site-specific for ` +
+    `${cb.specificSelectors} selectors in ${cb.specificGroups} domain sets, ${cb.ignoreRules} ignore rule(s) for ` +
+    `${cb.hidingOffDomains} $generichide and ${cb.elemhideOffDomains} $elemhide domains; ${cb.bytes} bytes); ` +
+    `site-specific filters: ${cb.specificFilters.used} used, ${cb.specificFilters.skipped} skipped`,
 );
 
 await writeFile(REPORT, JSON.stringify(report, null, 2) + "\n");

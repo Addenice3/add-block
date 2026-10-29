@@ -93,13 +93,22 @@ test("counts fit Safari's limits and match build-report.json", async () => {
     assert.equal(ids.size, rules.length, "ids unique (gaps where rules were dropped are fine)");
   }
   const blocker = await json(path.join(ROOT, CONTENT_BLOCKER_FILE));
-  assert.equal(blocker.length, report.contentBlockerStats.rules);
+  const stats = report.contentBlockerStats;
+  assert.equal(blocker.length, stats.rules);
   assert.ok(blocker.length <= SAFARI_LIMITS.CONTENT_BLOCKER_RULES);
-  const selectors = blocker.filter((r) => r.action.type === "css-display-none").reduce((n, r) => n + r.action.selector.split(",").length, 0);
-  assert.equal(selectors, report.contentBlockerStats.selectors);
-  assert.equal(selectors, (await json("build-report.json")).cosmetic.genericSelectors, "every generic selector the CSS has");
+  const cosmetic = (await json("build-report.json")).cosmetic;
+  assert.equal(stats.genericSelectors, cosmetic.genericSelectors, "every generic selector the CSS has");
+  assert.equal(stats.specificSelectors, stats.specificFilters.used, "every site-specific filter that was not skipped");
+  assert.equal(stats.specificFilters.used + stats.specificFilters.skipped, stats.specificFilters.filters);
+  assert.equal(stats.specificFilters.filters, cosmetic.skippedByReason[Object.keys(cosmetic.skippedByReason).find((k) => k.startsWith("site-specific"))].count);
+  assert.equal(stats.selectors, stats.genericSelectors + stats.specificSelectors);
+  // Order: generic hiding (no if-domain), the $generichide ignore rule, site-specific hiding (if-domain), nothing after.
+  const kinds = blocker.map((r) => (r.action.type === "ignore-previous-rules" ? "I" : r.trigger["if-domain"] ? "S" : "G")).join("");
+  assert.match(kinds, /^G+IS+$/, "generic rules, one ignore rule, site-specific rules (the lists have no $elemhide)");
+  assert.equal(blocker.filter((r) => r.trigger["if-domain"] && r.action.type === "css-display-none").length, stats.specificRules);
   console.log(
-    `Safari: ${report.rulesets.map((r) => `${r.id} ${r.rules} rules`).join(", ")}; content blocker ${blocker.length} rules, ${selectors} selectors`,
+    `Safari: ${report.rulesets.map((r) => `${r.id} ${r.rules} rules`).join(", ")}; content blocker ${blocker.length} rules, ` +
+      `${stats.selectors} selectors (${stats.specificSelectors} site-specific), ${stats.bytes} bytes`,
   );
 });
 
@@ -261,7 +270,7 @@ test("safariRegex: counted quantifiers expand to the same language, the rest of 
   assert.ok(expanded > 0 && refused > 0, "the pinned lists exercise both paths");
 });
 
-test("buildContentBlocker: generic rules, exact exception groups, one ignore rule last", () => {
+test("buildContentBlocker: generic rules, exact exception groups, the $generichide ignore rule, site-specific rules, the $elemhide ignore rule", () => {
   const generic = Array.from({ length: 250 }, (_, i) => `.g${i}`);
   const excepted = [
     { selector: ".a", domains: ["a.com", "b.com"] },
@@ -269,8 +278,14 @@ test("buildContentBlocker: generic rules, exact exception groups, one ignore rul
     { selector: ".c", domains: ["localhost"] },
   ];
   const hidingExcludes = ["*://*.x.com/*", "*://*.bing.com/search?*", "*://*.bing.com/*", "*://localhost/*", "*://10.0.0.1/*"];
-  const { rules, stats } = buildContentBlocker({ generic, excepted, hidingExcludes });
-  assert.equal(rules.length, 3 + 2 + 1);
+  const specific = [
+    { selector: "#s1", domains: ["s.com"] },
+    { selector: "#s2", domains: ["s.com"] },
+    { selector: "#s3", domains: ["s.com", "t.org"] },
+  ];
+  const elemhideExcludes = ["*://*.x.com/*"];
+  const { rules, stats } = buildContentBlocker({ generic, excepted, specific, hidingExcludes, elemhideExcludes });
+  assert.equal(rules.length, 3 + 2 + 1 + 2 + 1);
   assert.deepEqual(rules[0].trigger, { "url-filter": ".*" });
   assert.equal(rules[0].action.selector.split(",").length, 100);
   assert.equal(rules[2].action.selector.split(",").length, 50);
@@ -283,11 +298,21 @@ test("buildContentBlocker: generic rules, exact exception groups, one ignore rul
     trigger: { "url-filter": ".*", "if-domain": ["*bing.com", "*x.com", "10.0.0.1", "localhost"] },
     action: { type: "ignore-previous-rules" },
   });
+  assert.deepEqual(rules[6], {
+    trigger: { "url-filter": ".*", "if-domain": ["*s.com"] },
+    action: { type: "css-display-none", selector: "#s1,#s2" },
+  });
+  assert.deepEqual(rules[7].trigger, { "url-filter": ".*", "if-domain": ["*s.com", "*t.org"] });
+  assert.deepEqual(rules[8], { trigger: { "url-filter": ".*", "if-domain": ["*x.com"] }, action: { type: "ignore-previous-rules" } });
   assert.deepEqual(stats.pathPrefixExceptionsWidenedToHost, [{ pattern: "*://*.bing.com/search?*", host: "bing.com" }]);
   assert.deepEqual({ ...stats, pathPrefixExceptionsWidenedToHost: undefined }, {
-    rules: 6, selectors: 253, genericRules: 3, exceptionGroups: 2, exceptionRules: 2, ignoreRules: 1, hidingOffDomains: 4,
+    rules: 9, selectors: 256, genericSelectors: 253, genericRules: 3, exceptionGroups: 2, exceptionRules: 2,
+    specificSelectors: 3, specificGroups: 2, specificRules: 2, ignoreRules: 2, hidingOffDomains: 4, elemhideOffDomains: 1,
     pathPrefixExceptionsWidenedToHost: undefined,
   });
+  // Without site-specific filters and $elemhide: the ignore rule is last.
+  const plain = buildContentBlocker({ generic: [".g"], excepted: [], hidingExcludes: ["*://*.x.com/*"] });
+  assert.deepEqual(plain.rules.map((r) => r.action.type), ["css-display-none", "ignore-previous-rules"]);
   assert.deepEqual(hostOfPattern("*://*.a.com/path*"), { host: "a.com", subdomains: true, widened: true });
   assert.throws(() => hostOfPattern("<all_urls>"));
 
@@ -446,14 +471,27 @@ test("npm run check covers the Safari build: passes on dist-safari/, rejects sit
     [/unsupported functional pseudo-class :has-text/],
   );
   await expectSafariCheckFailure(
-    "a hiding rule after the ignore rule",
-    ({ blocker }) => blocker.push({ trigger: { "url-filter": ".*" }, action: { type: "css-display-none", selector: ".x" } }),
-    [/hiding rule after the ignore-previous-rules rule/],
+    "a generic hiding rule after the $generichide ignore rule, and a site-specific one before it",
+    ({ blocker }) => {
+      blocker.push({ trigger: { "url-filter": ".*" }, action: { type: "css-display-none", selector: ".x" } });
+      blocker.unshift({ trigger: { "url-filter": ".*", "if-domain": ["*a.com"] }, action: { type: "css-display-none", selector: ".y" } });
+    },
+    [/generic hiding rule after the \$generichide ignore rule/, /site-specific hiding rule before the \$generichide ignore rule/],
+  );
+  await expectSafariCheckFailure(
+    "a third ignore rule and a hiding rule after the last one",
+    ({ blocker }) =>
+      blocker.push(
+        { trigger: { "url-filter": ".*", "if-domain": ["*a.com"] }, action: { type: "ignore-previous-rules" } },
+        { trigger: { "url-filter": ".*", "if-domain": ["*a.com"] }, action: { type: "css-display-none", selector: ".z" } },
+        { trigger: { "url-filter": ".*", "if-domain": ["*a.com"] }, action: { type: "ignore-previous-rules" } },
+      ),
+    [/hiding rule after the last ignore rule/, /more than two ignore-previous-rules rules/],
   );
   await expectSafariCheckFailure(
     "an unlimited ignore rule and an odd domain",
     ({ blocker }) => {
-      blocker[blocker.length - 1].trigger = { "url-filter": ".*", "unless-domain": ["Bad.Com/"] };
+      blocker.find((r) => r.action.type === "ignore-previous-rules").trigger = { "url-filter": ".*", "unless-domain": ["Bad.Com/"] };
     },
     [/ignore-previous-rules must be limited by if-domain/, /bad domain in unless-domain: Bad.Com\//],
   );

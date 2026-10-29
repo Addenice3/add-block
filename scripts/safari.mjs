@@ -291,23 +291,33 @@ export function safariRuleset(rules) {
 // compiles and applies to every page by itself; it needs no site access and
 // learns nothing about the user. Its css-display-none action is the CSS
 // `display: none` that Chrome gets from content scripts. The mapping from
-// the cosmetic step's output (scripts/cosmetic.mjs):
+// the cosmetic step's output (scripts/cosmetic.mjs), in file order:
 //
-//   generic selectors        css-display-none, url-filter ".*" (every page),
+//   1 generic selectors      css-display-none, url-filter ".*" (every page),
 //                            100 selectors per rule
-//   selectors with #@# or    css-display-none, url-filter ".*", unless-domain
-//   ~a.com exceptions        with exactly the excepting domains; selectors
-//                            with the same domain set share a rule
-//   $generichide/$elemhide   one ignore-previous-rules rule, if-domain with
-//   exceptions               every excepted host, placed last so that it
-//                            cancels every hiding rule on those sites
+//   2 generic selectors      css-display-none, url-filter ".*", unless-domain
+//     with #@# or ~a.com     with exactly the excepting domains; selectors
+//     exceptions             with the same domain set share a rule
+//   3 $generichide and       one ignore-previous-rules rule, if-domain with
+//     $elemhide exceptions   every excepted host: cancels rules 1 and 2 on
+//                            those sites
+//   4 site-specific          css-display-none, url-filter ".*", if-domain
+//     selectors              with the filter's domains minus the ones that
+//     (a.com,b.com##sel)     except it; one rule per distinct domain set,
+//                            100 selectors per rule. After rule 3 because
+//                            $generichide switches off generic hiding only
+//   5 $elemhide exceptions   one ignore-previous-rules rule, if-domain with
+//                            those hosts: $elemhide switches off all hiding.
+//                            Absent when the lists have none
 //
 // "*a.com" in if-domain/unless-domain matches a.com and its subdomains.
 // Apple's description of the fields is in "Creating a content blocker".
 // Unlike Chrome's one shared file for excepted selectors, the exceptions are
-// exact here: a content blocker rule costs nothing to add.
+// exact here, and unlike Chrome's content scripts the site-specific filters
+// cost nothing: a content blocker rule with if-domain is exactly the
+// condition "on these sites" that CSS cannot express.
 //
-// The ignore rule lists only hosts. Four $generichide exceptions are path
+// The ignore rules list only hosts. Four $generichide exceptions are path
 // prefixes (`||bing.com/search?`); a domain condition cannot express a path,
 // so the build widens them to the host: hiding is off on all of that site
 // instead of its search pages. Nothing is hidden that a filter excepts.
@@ -332,53 +342,71 @@ function chunks(list, size) {
   return out;
 }
 
-export function buildContentBlocker({ generic, excepted, hidingExcludes }) {
+export function buildContentBlocker({ generic, excepted, specific = [], hidingExcludes, elemhideExcludes = [] }) {
   const rules = [];
   const hide = (selectors, trigger) => {
     for (const batch of chunks(selectors, SELECTORS_PER_RULE)) {
       rules.push({ trigger, action: { type: "css-display-none", selector: batch.join(",") } });
     }
   };
+  const condition = (domain) => (isBareHost(domain) ? domain : `*${domain}`);
+  // Selectors grouped by their exact domain list, one rule per group.
+  const groupedRules = (entries, key) => {
+    const groups = new Map();
+    for (const { selector, domains } of entries) {
+      const id = domains.join(" ");
+      if (!groups.has(id)) groups.set(id, { domains, selectors: [] });
+      groups.get(id).selectors.push(selector);
+    }
+    const before = rules.length;
+    for (const { domains, selectors } of [...groups.values()].sort((a, b) => a.domains.join(" ").localeCompare(b.domains.join(" ")))) {
+      hide(selectors, { "url-filter": ".*", [key]: domains.map(condition) });
+    }
+    return { groups: groups.size, rules: rules.length - before };
+  };
+  const hostsOf = (patterns, widened) => {
+    const hosts = new Set();
+    for (const pattern of patterns) {
+      const parsed = hostOfPattern(pattern);
+      if (parsed.widened && widened) widened.push({ pattern, host: parsed.host });
+      hosts.add(domainCondition(parsed));
+    }
+    return [...hosts].sort();
+  };
+  const ignore = (hosts) => {
+    if (hosts.length) rules.push({ trigger: { "url-filter": ".*", "if-domain": hosts }, action: { type: "ignore-previous-rules" } });
+    return hosts.length ? 1 : 0;
+  };
 
+  // 1, 2
   hide(generic, { "url-filter": ".*" });
-
-  const groups = new Map(); // sorted domain list -> selectors
-  for (const { selector, domains } of excepted) {
-    const key = domains.join(" ");
-    if (!groups.has(key)) groups.set(key, { domains, selectors: [] });
-    groups.get(key).selectors.push(selector);
-  }
-  const groupRules = rules.length;
-  for (const { domains, selectors } of [...groups.values()].sort((a, b) => a.domains.join(" ").localeCompare(b.domains.join(" ")))) {
-    hide(selectors, {
-      "url-filter": ".*",
-      "unless-domain": domains.map((d) => (isBareHost(d) ? d : `*${d}`)),
-    });
-  }
-  const exceptionRules = rules.length - groupRules;
-
-  const hosts = new Set();
+  const genericRules = rules.length;
+  const exception = groupedRules(excepted, "unless-domain");
+  // 3
   const widened = [];
-  for (const pattern of hidingExcludes) {
-    const parsed = hostOfPattern(pattern);
-    if (parsed.widened) widened.push({ pattern, host: parsed.host });
-    hosts.add(domainCondition(parsed));
-  }
-  const hidingOff = [...hosts].sort();
-  if (hidingOff.length) {
-    rules.push({ trigger: { "url-filter": ".*", "if-domain": hidingOff }, action: { type: "ignore-previous-rules" } });
-  }
+  const hidingOff = hostsOf(hidingExcludes, widened);
+  const genericIgnore = ignore(hidingOff);
+  // 4
+  const site = groupedRules(specific, "if-domain");
+  // 5
+  const elemhideOff = hostsOf(elemhideExcludes);
+  const elemhideIgnore = ignore(elemhideOff);
 
   return {
     rules,
     stats: {
       rules: rules.length,
-      selectors: generic.length + excepted.length,
-      genericRules: groupRules,
-      exceptionGroups: groups.size,
-      exceptionRules,
-      ignoreRules: hidingOff.length ? 1 : 0,
+      selectors: generic.length + excepted.length + specific.length,
+      genericSelectors: generic.length + excepted.length,
+      genericRules,
+      exceptionGroups: exception.groups,
+      exceptionRules: exception.rules,
+      specificSelectors: specific.length,
+      specificGroups: site.groups,
+      specificRules: site.rules,
+      ignoreRules: genericIgnore + elemhideIgnore,
       hidingOffDomains: hidingOff.length,
+      elemhideOffDomains: elemhideOff.length,
       pathPrefixExceptionsWidenedToHost: widened,
     },
   };
@@ -470,6 +498,6 @@ export async function buildSafari({ dist, manifest, rulesets, cosmetic }) {
   await mkdir(path.dirname(file), { recursive: true });
   const json = serializeRuleset(rules);
   await writeFile(file, json);
-  report.contentBlockerStats = { ...stats, bytes: Buffer.byteLength(json) };
+  report.contentBlockerStats = { ...stats, bytes: Buffer.byteLength(json), specificFilters: cosmetic.specificStats };
   return report;
 }

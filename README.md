@@ -53,7 +53,8 @@ The Safari build is two things, both committed under `dist-safari/`:
   Safari differs (DESIGN.md, "Safari", lists each change). The popup has no
   blocked count and no `chrome://` link.
 - `dist-safari/content-blocker/blockerList.json`: a Safari content blocker
-  that hides the same elements the Chrome CSS hides, with EasyList's
+  that hides the same elements the Chrome CSS hides plus EasyList's
+  site-specific filters, which Chrome cannot carry as CSS, with EasyList's
   exceptions. Safari compiles it and applies it to every page itself; it
   needs no site access and has no access to pages.
 
@@ -121,7 +122,43 @@ bundle identifier is the placeholder `com.example.add-block`; set
     scored 97/100 there, the same as in Chrome) and
     <https://canyoublockit.com/testing>. To see that hiding is the content
     blocker's: turn **add-block Hiding** off, reload, and the Google ad
-    slots on canyoublockit.com come back as empty boxes.
+    slots on canyoublockit.com come back as empty boxes. Site-specific
+    hiding, new in Safari: with it on, the site's "Adblocker detected"
+    text (EasyList hides `.elementor-widget-container > center > p` on
+    canyoublockit.com only) is gone; Chrome still shows it.
+11. Check that Safari honours the `domains` condition. The Safari build
+    renames Chrome's `initiatorDomains` to `domains` in 1,116 rules and in
+    the popup's switch, because Apple's release notes use that name; the
+    earlier Safari test ran the Chrome build and exercised neither name,
+    so this is unproven. Two checks, each with a clear reading:
+    - **The switch.** On <https://canyoublockit.com/testing> click the
+      add-block button and turn the switch off (the page reloads with
+      ads). In a new tab open <https://adblock-tester.com/>. **97/100**
+      means the switch's allow rule stayed scoped to canyoublockit.com:
+      `domains` works. **About 41/100** (nothing blocked anywhere) means
+      Safari ignored `domains` and the allow rule applies everywhere.
+      **"Could not change the setting"** in the popup means Safari
+      rejected the key. Turn the switch back on afterwards.
+    - **A static rule.** EasyList rule 2008 blocks every request to
+      amazonaws.com, but only on four sites (animeflv.net,
+      mangakakalot.gg, nelomanga.net, uploadhaven.com). On
+      <https://adblock-tester.com/>, which is not one of them, open
+      **Develop → Show Web Inspector → Console** and run:
+
+      ```js
+      fetch("https://s3.amazonaws.com/", { mode: "no-cors" }).then(() => console.log("loaded"), () => console.log("blocked"))
+      ```
+
+      **loaded** means the rule stayed on its four sites: `domains`
+      works. **blocked** means Safari applies the rule everywhere, so the
+      Safari build over-blocks and the name must change; also look for
+      errors under **Settings → Extensions → add-block**. Run the same
+      line on <https://uploadhaven.com/> as the control: there it must
+      print **blocked**; if it prints **loaded** on both sites, the rule
+      is not reaching fetches at all and the check is inconclusive.
+
+    Either way, report the result; the Safari build changes only if
+    Safari turns out to want the other name.
 
 To update after a list change: `git pull`, then `safari/package.sh` (it
 copies the new extension files and `blockerList.json` into the project),
@@ -248,14 +285,18 @@ patterns a match pattern cannot express.
 after the transform (3 dropped: 2 allow rules that only matched the
 `object` type, 1 regex with alternation; 1,221 changed, mostly the
 `initiatorDomains` rename and resource types Safari does not have), 9 regex
-rules. The content blocker has 410 rules for the same 13,636 selectors:
-134 generic rules, 275 rules for the 300 selectors with exceptions (one per
-distinct domain set, exact rather than Chrome's shared file), and one
-`ignore-previous-rules` rule that turns hiding off on the 188
-`$generichide` sites. That is 0.8% of the 50,000 rules a content blocker
-may hold (Safari 15 and later take 150,000, from memory; the lower figure
-is enforced). Safari allows 50 static rulesets with 10 enabled; this uses
-2.
+rules. The content blocker has 5,815 rules for 23,801 selectors (1.2 MB):
+134 generic rules for the same 13,636 selectors as the CSS, 275 rules for
+the 300 selectors with exceptions (one per distinct domain set, exact
+rather than Chrome's shared file), one `ignore-previous-rules` rule that
+turns generic hiding off on the 188 `$generichide` sites, and 5,405 rules
+for 10,165 site-specific selectors (one per distinct domain set; 282 of
+the 10,447 site-specific filters are skipped: 236 name only wildcard or
+single-label domains, 45 have selectors the validator refuses, 1 is
+excepted on a subdomain). That is 11.6% of the 50,000 rules a content
+blocker may hold (Safari 15 and later take 150,000, from memory; the
+lower figure is enforced). Safari allows 50 static rulesets with 10
+enabled; this uses 2.
 
 ## Layout
 

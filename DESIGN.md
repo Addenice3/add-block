@@ -312,17 +312,19 @@ are injected at `document_start` in all frames; Chromium applies them after
 the page's own stylesheets, so a page `!important` does not win, but an
 inline `style="display:block!important"` does.
 
-**Not shipped: site-specific filters** (`a.com,b.com##selector`, 10,447
-filters over 7,936 domains in the pinned EasyList). CSS cannot select on the
-page's host, so each distinct domain set needs its own `content_scripts`
-entry with its own match patterns: 5,400 entries. Chrome's cost grows with
-the number of entries. Measured in Chromium 153 with that manifest:
-installing the extension took 36 s and opening chrome://extensions 45 s
-(with 1,000 entries, 9 s and 10 s; with the two generic entries, 0.6 s
-and 0.3 s). Doing this properly means registering content scripts for the
-current site from code, which is JavaScript in the extension and in pages,
-and is ruled out above. The build counts them, so a later decision can be
-made with numbers.
+**Not shipped as CSS: site-specific filters** (`a.com,b.com##selector`,
+10,447 filters over 7,936 domains in the pinned EasyList). CSS cannot
+select on the page's host, so each distinct domain set needs its own
+`content_scripts` entry with its own match patterns: 5,400 entries.
+Chrome's cost grows with the number of entries. Measured in Chromium 153
+with that manifest: installing the extension took 36 s and opening
+chrome://extensions 45 s (with 1,000 entries, 9 s and 10 s; with the two
+generic entries, 0.6 s and 0.3 s). Doing this properly means registering
+content scripts for the current site from code, which is JavaScript in the
+extension and in pages, and is ruled out above. The build counts them, so
+a later decision can be made with numbers. The Safari content blocker
+ships them: its `if-domain` trigger is exactly "on these sites" (see
+"Safari").
 
 **Coarse exceptions.** Only 300 generic selectors have `#@#` exceptions,
 on 475 domains. Exact handling needs one entry per distinct set of
@@ -528,36 +530,60 @@ request) is written by the Safari popup with `domains` instead of
 ### Element hiding: the content blocker
 
 `dist-safari/content-blocker/blockerList.json` is a Safari content blocker
-list built from the same cosmetic data as the Chrome CSS
-(`buildCosmetic` returns it as `details`). Safari compiles the list into
-bytecode and applies it to every page itself; the extension never sees a
-page, and no site access is involved. Mapping:
+list built from the same cosmetic data as the Chrome CSS plus the
+site-specific filters the CSS cannot carry (`buildCosmetic` returns both
+as `details`). Safari compiles the list into bytecode and applies it to
+every page itself; the extension never sees a page, and no site access is
+involved. Mapping, in file order:
 
 | Cosmetic data | Content blocker rule |
 | --- | --- |
-| generic selector (`##selector`, no exceptions) | `css-display-none`, trigger `url-filter: ".*"`; 100 selectors per rule, as in the CSS |
-| selector with `#@#` or `~a.com` exceptions | `css-display-none`, trigger `url-filter: ".*"` with `unless-domain: ["*a.com", …]`, exactly its excepting domains; selectors with the same domain set share a rule |
-| `$generichide`/`$elemhide` exception for a host | the host in the `if-domain` of one `ignore-previous-rules` rule, placed last |
+| 1. generic selector (`##selector`, no exceptions) | `css-display-none`, trigger `url-filter: ".*"`; 100 selectors per rule, as in the CSS |
+| 2. generic selector with `#@#` or `~a.com` exceptions | `css-display-none`, trigger `url-filter: ".*"` with `unless-domain: ["*a.com", …]`, exactly its excepting domains; selectors with the same domain set share a rule |
+| 3. `$generichide` or `$elemhide` exception for a host | the host in the `if-domain` of one `ignore-previous-rules` rule, which cancels rules 1 and 2 on those sites |
+| 4. site-specific selector (`a.com,b.com##selector`) | `css-display-none`, trigger `url-filter: ".*"` with `if-domain: ["*a.com", "*b.com"]`, the filter's domains minus those that `#@#` excepts (a domain's exception covers its subdomains); one rule per distinct domain set, 100 selectors per rule. After rule 3 because `$generichide` switches off generic hiding only |
+| 5. `$elemhide` exception for a host | a second `ignore-previous-rules` rule, placed last: `$elemhide` switches off all hiding. The pinned lists have none, so the file ends with rule 4 |
 | `$generichide` exception with a path (`\|\|bing.com/search?`) | widened to the host: a domain condition cannot express a path. Four in the pinned lists. Hiding is off on all of that site rather than its search pages; nothing is hidden that a filter excepts |
+
+Site-specific filters are skipped, and counted under
+`safari.contentBlockerStats.specificFilters` in the report, when no
+domain condition can express them: domains with a wildcard TLD
+(`example.*`) or a single label, because `if-domain` takes hosts (236
+filters, after dropping those domains from filters that also name real
+ones: 337 domains); a filter that both includes and excludes domains
+(none in the pinned lists; a trigger has one domain condition); a filter
+excepted on a subdomain of one of its domains (1); a selector the
+validator refuses (45, mostly uBO `+js(...)` snippets and `:style()`);
+and a filter that a domainless `#@#` or its own domains' exceptions
+remove entirely. Nothing is hidden that a filter excepts.
 
 `*a.com` in a domain condition matches a.com and its subdomains (Apple's
 "Add * in front to match domain and subdomains"); `localhost` and IP
 addresses get no star. `ignore-previous-rules` cancels every rule before it
-in the same list, and this list holds nothing but hiding rules, so the one
-ignore rule needs no resource-type condition and cannot touch request
+in the same list, and this list holds nothing but hiding rules, so the
+ignore rules need no resource-type condition and cannot touch request
 blocking (which is the web extension's separate rule list). The exceptions
 are exact here, unlike Chrome's one shared file for excepted selectors: a
 content blocker rule costs nothing to add, so the "coarse exceptions"
-compromise above is Chrome-only.
+compromise above and the missing site-specific filters are Chrome-only.
+`npm run check --safari` verifies the order: generic hiding rules, the
+`$generichide` ignore rule, then only rules with `if-domain`, and at most
+one more ignore rule.
 
-Counts for the v0.4 build: 410 rules for the same 13,636 selectors (134
-generic, 275 for the 300 excepted selectors in 275 domain sets, 1 ignore
-rule for 188 domains), 254 KB. WebKit rejects a whole list when one
+Counts for the v0.4 build: 5,815 rules for 23,801 selectors, 1.2 MB. Of
+those, 134 rules hold the 13,336 generic selectors, 275 rules the 300
+excepted ones (275 domain sets), 1 ignore rule 188 `$generichide` hosts,
+and 5,405 rules the 10,165 site-specific selectors (5,405 domain sets;
+10,447 filters minus the 282 skipped above). That is 11.6% of the 50,000
+rules enforced as the limit. WebKit rejects a whole list when one
 selector or trigger is invalid, so every selector goes through the same
 strict validator as the CSS (`npm run check --safari`), and
 `safari/check.swift` compiles the list with `WKContentRuleListStore`, the
 compiler Safari uses, before the project is built (Safari 16.4 added
-`:has()` to content blockers, the newest thing the validator admits).
+`:has()` to content blockers, the newest thing the validator admits). The
+site-specific filters are the most likely to hit something WebKit's
+selector parser dislikes; if the compile check fails on one, the fix is
+to refuse that syntax in `scripts/selector.mjs`, not to edit the output.
 
 Like the Chrome CSS, the content blocker is not switched per site by the
 popup: it is a separate extension with its own on/off switch in Safari's
@@ -571,7 +597,7 @@ settings, which is what the Safari popup's note points to.
 | enabled static rulesets | 10 | Safari 16 release notes | 2 |
 | static rules | not documented | Safari compiles DNR into content rule lists, so the content blocker limit below is the likely bound, counted per `requestDomains` entry rather than per merged rule: about 102,700 for these lists | 12,940 rules |
 | regex rules per ruleset | not documented | Chrome's 1,000 kept as the check | 4 and 5 |
-| content blocker rules per list | 50,000 (Safari 15 and later: 150,000, from memory, unverified) | not in any Apple page reachable here; the lower figure is enforced | 410 |
+| content blocker rules per list | 50,000 (Safari 15 and later: 150,000, from memory, unverified) | not in any Apple page reachable here; the lower figure is enforced | 5,815 |
 | dynamic rules | not documented (`MAX_NUMBER_OF_DYNAMIC_AND_SESSION_RULES` exists since 16.4) | Safari 16.4 release notes | 2 per site switched off |
 
 ### Packaging
@@ -600,10 +626,16 @@ the owner's one test; the first run on the Mac should look at each:
   the content blocker appears as "add-block Hiding" with no prompt.
 - `domains`/`excludedDomains` are honoured (a `$domain=` rule blocks on
   its site and nowhere else), and the switch's `allow` rule with
-  `domains` turns blocking off for one site only.
-- The content blocker hides the same elements as the Chrome CSS, and
-  hides nothing on a `$generichide` site (github.com is one) or for an
-  excepted selector on its domain.
+  `domains` turns blocking off for one site only. The owner's earlier
+  test used the Chrome build with `initiatorDomains` and only scored
+  generic rules, so it says nothing about either name. README, "Safari",
+  has a step with a page and a console line for each, and what each
+  result means.
+- The content blocker hides the same elements as the Chrome CSS, hides
+  nothing on a `$generichide` site (github.com is one) or for an excepted
+  selector on its domain, and applies a site-specific filter on its site
+  only (canyoublockit.com has one: the "Adblocker detected" text under
+  `.elementor-widget-container > center > p` should be gone there).
 - `safari/check.swift` passes, in particular the expanded regexes and the
   `^`/`$` anchors and `\/` escapes they keep.
 - The `isUrlFilterCaseSensitive` default (16.4 says `false`) and what a

@@ -370,15 +370,18 @@ if (!SAFARI && enabledRules > LIMITS.GUARANTEED_MINIMUM_STATIC_RULES) {
 
 // 9. Safari content blocker: css-display-none and ignore-previous-rules only,
 // every selector through the validator, domains as lowercase hosts, and the
-// hiding rules before the ignore rule that cancels them.
-const blocker = { rules: 0, selectors: 0, hideRules: 0, ignoreRules: 0, bytes: 0 };
+// order DESIGN.md gives: generic hiding rules, the $generichide ignore rule,
+// site-specific hiding rules (if-domain), and at most one more ignore rule
+// ($elemhide). A generic rule after the first ignore rule would escape
+// $generichide, so after it every hiding rule must carry if-domain.
+const blocker = { rules: 0, selectors: 0, genericSelectors: 0, specificSelectors: 0, hideRules: 0, specificRules: 0, ignoreRules: 0, bytes: 0 };
 if (SAFARI) {
   const file = path.join(ROOT, CONTENT_BLOCKER_FILE);
   const text = await readFile(file, "utf8");
   blocker.bytes = Buffer.byteLength(text);
   const rules = JSON.parse(text);
   if (!Array.isArray(rules) || rules.length === 0) fail(`${CONTENT_BLOCKER_FILE}: must be a non-empty array of rules`);
-  let seenIgnore = false;
+  let ignoresSeen = 0;
   for (const [index, rule] of (Array.isArray(rules) ? rules : []).entries()) {
     const where = `${CONTENT_BLOCKER_FILE} rule ${index}`;
     blocker.rules++;
@@ -402,7 +405,11 @@ if (SAFARI) {
     const actionKeys = Object.keys(rule.action ?? {}).sort().join(",");
     if (type === "css-display-none") {
       blocker.hideRules++;
-      if (seenIgnore) fail(`${where}: hiding rule after the ignore-previous-rules rule, which would not cancel it`);
+      const specific = Boolean(trigger["if-domain"]);
+      if (specific) blocker.specificRules++;
+      if (ignoresSeen === 0 && specific) fail(`${where}: site-specific hiding rule before the $generichide ignore rule, which would cancel it`);
+      if (ignoresSeen === 1 && !specific) fail(`${where}: generic hiding rule after the $generichide ignore rule, which would not cancel it`);
+      if (ignoresSeen > 1) fail(`${where}: hiding rule after the last ignore rule`);
       if (actionKeys !== "selector,type") fail(`${where}: css-display-none action must have exactly type and selector`);
       const selector = rule.action.selector;
       if (typeof selector !== "string" || !selector.trim()) fail(`${where}: selector missing`);
@@ -410,11 +417,15 @@ if (SAFARI) {
         if (FORBIDDEN_IN_CSS.test(bareCss(selector))) fail(`${where}: forbidden text in selector`);
         const problem = selectorProblem(selector);
         if (problem) fail(`${where}: ${problem}: ${selector.slice(0, 80)}`);
-        blocker.selectors += selector.split(",").length;
+        const count = selector.split(",").length;
+        blocker.selectors += count;
+        if (specific) blocker.specificSelectors += count;
+        else blocker.genericSelectors += count;
       }
     } else if (type === "ignore-previous-rules") {
       blocker.ignoreRules++;
-      seenIgnore = true;
+      ignoresSeen++;
+      if (ignoresSeen > 2) fail(`${where}: more than two ignore-previous-rules rules`);
       if (actionKeys !== "type") fail(`${where}: ignore-previous-rules action must have only a type`);
       if (!trigger["if-domain"]) fail(`${where}: ignore-previous-rules must be limited by if-domain`);
     }
@@ -440,8 +451,9 @@ console.log(
 if (SAFARI) {
   console.log(`Enabled static rules: ${enabledRules} in ${enabledRulesets} rulesets (Safari: ${LIMITS.MAX_NUMBER_OF_STATIC_RULESETS} rulesets, ${LIMITS.MAX_NUMBER_OF_ENABLED_STATIC_RULESETS} enabled)`);
   console.log(
-    `Content blocker: ${blocker.rules} rules (${blocker.hideRules} css-display-none, ${blocker.ignoreRules} ignore-previous-rules), ` +
-      `${blocker.selectors} selectors, ${blocker.bytes} bytes; limit ${LIMITS.CONTENT_BLOCKER_RULES} rules ` +
+    `Content blocker: ${blocker.rules} rules (${blocker.hideRules - blocker.specificRules} generic css-display-none, ` +
+      `${blocker.specificRules} site-specific, ${blocker.ignoreRules} ignore-previous-rules), ${blocker.selectors} selectors ` +
+      `(${blocker.genericSelectors} generic, ${blocker.specificSelectors} site-specific), ${blocker.bytes} bytes; limit ${LIMITS.CONTENT_BLOCKER_RULES} rules ` +
       `(${((blocker.rules / LIMITS.CONTENT_BLOCKER_RULES) * 100).toFixed(1)}% used)`,
   );
 } else {

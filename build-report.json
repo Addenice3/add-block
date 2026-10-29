@@ -144,7 +144,7 @@
     "contentScripts": 2,
     "cssBytes": 224458,
     "skippedByReason": {
-      "site-specific filter (needs one content script per domain set, see DESIGN.md)": {
+      "site-specific filter (Chrome: needs one content script per domain set, see DESIGN.md; Safari: in the content blocker)": {
         "count": 10447,
         "examples": [
           "advfn.com###APS_300_X_600",
@@ -327,13 +327,18 @@
       "js": "initiatorDomains renamed to domains in the switch rule"
     },
     "contentBlockerStats": {
-      "rules": 410,
-      "selectors": 13636,
+      "rules": 5815,
+      "selectors": 23801,
+      "genericSelectors": 13636,
       "genericRules": 134,
       "exceptionGroups": 275,
       "exceptionRules": 275,
+      "specificSelectors": 10165,
+      "specificGroups": 5405,
+      "specificRules": 5405,
       "ignoreRules": 1,
       "hidingOffDomains": 188,
+      "elemhideOffDomains": 0,
       "pathPrefixExceptionsWidenedToHost": [
         {
           "pattern": "*://*.taboolanews.com/feed*",
@@ -352,7 +357,68 @@
           "host": "yandex.com"
         }
       ],
-      "bytes": 260297
+      "bytes": 1211164,
+      "specificFilters": {
+        "filters": 10447,
+        "used": 10165,
+        "skipped": 282,
+        "skippedByReason": {
+          "no domain a domain condition can express (example.* or a single label)": {
+            "count": 236,
+            "examples": [
+              "sgcarmart##.dealer_banner",
+              "ticketmaster##.kOwduY",
+              "read.amazon.*##.kw-ads-ftue-container"
+            ]
+          },
+          "selector not accepted by the validator: expected a selector": {
+            "count": 29,
+            "examples": [
+              "accuweather.com,acmemarkets.com,aiskillsnavigator.microsoft.com,boston.com,capezio.com,chime.com,costco.com,crunchyroll.com,deezer.com,delta.com,dnb.co.uk,dnb.com,dollargeneral.com,engadget.com,espn.com,eventbrite.com,filson.com,flyfrontier.com,formula1.com,geizhals.de,gladiatorgarageworks.com,harborfreight.com,hopwtr.com,jdsports.com,kkrt.com,lenscrafters.com,livewithkellyandmark.com,madewell.com,mail.yahoo.com,mazdausa.com,michaels.com,milesplit.live,monsterenergy.com,newyorker.com,norton.com,pandora.com,payment.nba.com,porsche.com,qobuz.com,rivals.com,soundcloud.com,spotify.com,subway.com,techcrunch.com,ticketmaster.*,tidal.com,tirerack.com,twitter.com,uber.com,ubereats.com,usaa.com,vimeo.com,visible.com,weather.com,wunderground.com,www.yahoo.com,x.com##+js(set, Navigator.prototype.globalPrivacyControl, false)",
+              "accuweather.com,acmemarkets.com,aiskillsnavigator.microsoft.com,boston.com,capezio.com,chime.com,costco.com,crunchyroll.com,deezer.com,delta.com,dnb.co.uk,dnb.com,dollargeneral.com,engadget.com,espn.com,eventbrite.com,filson.com,flyfrontier.com,formula1.com,geizhals.de,gladiatorgarageworks.com,harborfreight.com,hopwtr.com,jdsports.com,kkrt.com,lenscrafters.com,livewithkellyandmark.com,madewell.com,mail.yahoo.com,mazdausa.com,michaels.com,milesplit.live,monsterenergy.com,newyorker.com,norton.com,pandora.com,payment.nba.com,porsche.com,qobuz.com,rivals.com,soundcloud.com,spotify.com,subway.com,techcrunch.com,ticketmaster.*,tidal.com,tirerack.com,twitter.com,uber.com,ubereats.com,usaa.com,vimeo.com,visible.com,weather.com,wunderground.com,www.yahoo.com,x.com##+js(set, navigator.globalPrivacyControl, false)",
+              "madewell.com##+js(cookie-remover, dns_cookie)"
+            ]
+          },
+          "selector not accepted by the validator: unsupported functional pseudo-class :-abp-properties()": {
+            "count": 6,
+            "examples": [
+              "redtube.com,tube8.com,tube8.es,tube8.fr,xvideos.com,youjizz.com,youporn.com##:-abp-properties(*data:image*)",
+              "redtube.com,tube8.com,tube8.es,tube8.fr,xvideos.com,youjizz.com,youporn.com##:-abp-properties(base64)",
+              "redtube.com,tube8.com,tube8.es,tube8.fr,xvideos.com,youjizz.com,youporn.com##:-abp-properties(data:)"
+            ]
+          },
+          "selector not accepted by the validator: :has() inside :has()": {
+            "count": 4,
+            "examples": [
+              "tympanus.net##article:has(header:has(.ct-sponsored))",
+              "majorgeeks.com##div > [style]:has([style]:has([href*=\"&utm\"]))",
+              "wolt.com##div[data-test-id=\"MainDiscoveryContent\"] li:has(> div.cb-elevated:has(button[data-test-id=\"AdvertisingLabel\"]))"
+            ]
+          },
+          "selector not accepted by the validator: unsupported functional pseudo-class :style()": {
+            "count": 4,
+            "examples": [
+              "anikore.jp##html[class^=\"loading\"]:style(visibility: visible !important;)",
+              "e-begin.jp##.inviewSection:not(.is-show):style(transform: translateY(0) !important; opacity: 1 !important;)",
+              "mustar.meitetsu.co.jp##body[style=\"opacity: 0;\"]:style(opacity: 1 !important;)"
+            ]
+          },
+          "selector not accepted by the validator: selector contains {, }, /* or url(": {
+            "count": 2,
+            "examples": [
+              "ranker.com##+js(aost, HTMLElement.prototype.insertBefore, /[A-Z] .+chunks\\/\\d{4}\\./)",
+              "ncbi.nlm.nih.gov##+js(set, ncbi.sg, {})"
+            ]
+          },
+          "excepted on a subdomain of an included domain (cannot be expressed)": {
+            "count": 1,
+            "examples": [
+              "yahoo.com##.ads"
+            ]
+          }
+        },
+        "wildcardDomainsDropped": 337
+      }
     }
   }
 }
