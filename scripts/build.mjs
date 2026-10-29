@@ -1,6 +1,7 @@
-// Builds dist/ from src/ plus the filter lists pinned in lists.lock.json.
-// Output depends only on the pinned list bytes, src/ and the locked npm
-// dependencies, so rebuilding from the same pins gives identical files.
+// Builds dist/ from src/ plus the filter lists pinned in lists.lock.json,
+// then dist-safari/ from dist/ (scripts/safari.mjs). Output depends only on
+// the pinned list bytes, src/ and the locked npm dependencies, so rebuilding
+// from the same pins gives identical files.
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -9,6 +10,7 @@ import { buildCosmetic } from "./cosmetic.mjs";
 import { loadPinned } from "./fetch.mjs";
 import { LOCK_FILE } from "./lists.mjs";
 import { assertMergeEquivalent, mergeHostRules } from "./merge.mjs";
+import { SAFARI_DIST, buildSafari } from "./safari.mjs";
 
 const require = createRequire(import.meta.url);
 const { convertFilter } = require("@eyeo/abp2dnr");
@@ -183,11 +185,13 @@ await cp(SRC, DIST, { recursive: true });
 
 const report = { extensionVersion: manifest.version, lists: [] };
 const cosmeticFilters = [];
+const rulesets = new Map();
 
 for (const list of lock.lists) {
   const text = (await loadPinned(list)).toString("utf8");
   const { ruleset, cosmetic, stats, droppedByReason } = await convertList(text);
   cosmeticFilters.push(...cosmetic);
+  rulesets.set(list.id, ruleset);
   const resource = resources.find((r) => r.id === list.id);
   const outPath = path.join(DIST, resource.path);
   await mkdir(path.dirname(outPath), { recursive: true });
@@ -214,7 +218,7 @@ for (const list of lock.lists) {
 
 // Cosmetic filters from all lists are handled together, because an
 // exception in one list applies to the filters of every list.
-const { files, contentScripts, stats: cosmeticStats } = buildCosmetic(cosmeticFilters);
+const { files, contentScripts, details: cosmeticDetails, stats: cosmeticStats } = buildCosmetic(cosmeticFilters);
 for (const [file, css] of files) {
   const outPath = path.join(DIST, file);
   await mkdir(path.dirname(outPath), { recursive: true });
@@ -229,5 +233,18 @@ console.log(
     `(${cosmeticStats.cssBytes} bytes), ${cosmeticStats.contentScripts} content_scripts entries`,
 );
 
+// Safari: the same extension, transformed where Apple's documentation says
+// Safari differs, plus a native content blocker in place of the CSS.
+report.safari = await buildSafari({ dist: DIST, manifest, rulesets, cosmetic: cosmeticDetails });
+for (const r of report.safari.rulesets) {
+  console.log(`safari ${r.id}: ${r.rules} rules (${r.changed} changed, ${r.dropped} dropped, ${r.regexRules} regex)`);
+}
+const cb = report.safari.contentBlockerStats;
+console.log(
+  `safari content blocker: ${cb.rules} rules for ${cb.selectors} selectors (${cb.genericRules} generic, ` +
+    `${cb.exceptionRules} with exceptions in ${cb.exceptionGroups} domain sets, ${cb.ignoreRules} ignore rule for ` +
+    `${cb.hidingOffDomains} domains; ${cb.bytes} bytes)`,
+);
+
 await writeFile(REPORT, JSON.stringify(report, null, 2) + "\n");
-console.log(`Wrote ${DIST}/ and ${REPORT}`);
+console.log(`Wrote ${DIST}/, ${SAFARI_DIST}/ and ${REPORT}`);

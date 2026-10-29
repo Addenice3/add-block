@@ -1,5 +1,5 @@
 {
-  "extensionVersion": "0.3.0",
+  "extensionVersion": "0.4.0",
   "lists": [
     {
       "id": "easylist",
@@ -176,6 +176,183 @@
           "@@||taboolanews.com/summary-page/*_samsung-carnival-$generichide"
         ]
       }
+    }
+  },
+  "safari": {
+    "extensionDir": "dist-safari/extension",
+    "contentBlocker": "content-blocker/blockerList.json",
+    "rulesets": [
+      {
+        "id": "easylist",
+        "chromeRules": 3824,
+        "rules": 3822,
+        "regexRules": 4,
+        "unchanged": 3265,
+        "changed": 557,
+        "dropped": 2,
+        "changesByReason": {
+          "initiatorDomains renamed to domains (the name in Apple's Safari release notes)": {
+            "count": 389,
+            "examples": [
+              1436,
+              1437,
+              1494
+            ]
+          },
+          "resourceTypes without csp_report, object, webbundle (not resource types in Safari)": {
+            "count": 97,
+            "examples": [
+              3,
+              8,
+              9
+            ]
+          },
+          "excludedInitiatorDomains renamed to excludedDomains (the name in Apple's Safari release notes)": {
+            "count": 86,
+            "examples": [
+              6,
+              7,
+              13
+            ]
+          },
+          "allowAllRequests limited to main_frame, without sub_frame": {
+            "count": 4,
+            "examples": [
+              1000175,
+              1000176,
+              1000209
+            ]
+          },
+          "resourceTypes without csp_report, webbundle (not resource types in Safari)": {
+            "count": 3,
+            "examples": [
+              13,
+              156,
+              1274
+            ]
+          },
+          "dropped: only matches object, not resource types in Safari": {
+            "count": 2,
+            "examples": [
+              1000022,
+              1000023
+            ]
+          },
+          "regexFilter counted quantifiers expanded (not in Safari's documented regex syntax)": {
+            "count": 2,
+            "examples": [
+              2713,
+              2755
+            ]
+          },
+          "resourceTypes without csp_report (not resource types in Safari)": {
+            "count": 2,
+            "examples": [
+              949,
+              950
+            ]
+          },
+          "resourceTypes without object (not resource types in Safari)": {
+            "count": 1,
+            "examples": [
+              1275
+            ]
+          }
+        }
+      },
+      {
+        "id": "easyprivacy",
+        "chromeRules": 9119,
+        "rules": 9118,
+        "regexRules": 5,
+        "unchanged": 8454,
+        "changed": 664,
+        "dropped": 1,
+        "changesByReason": {
+          "initiatorDomains renamed to domains (the name in Apple's Safari release notes)": {
+            "count": 566,
+            "examples": [
+              3482,
+              3493,
+              3499
+            ]
+          },
+          "excludedInitiatorDomains renamed to excludedDomains (the name in Apple's Safari release notes)": {
+            "count": 75,
+            "examples": [
+              8,
+              162,
+              275
+            ]
+          },
+          "resourceTypes without csp_report, object, webbundle (not resource types in Safari)": {
+            "count": 23,
+            "examples": [
+              1277,
+              1704,
+              2267
+            ]
+          },
+          "regexFilter counted quantifiers expanded (not in Safari's documented regex syntax)": {
+            "count": 5,
+            "examples": [
+              7212,
+              7213,
+              7214
+            ]
+          },
+          "resourceTypes without csp_report (not resource types in Safari)": {
+            "count": 3,
+            "examples": [
+              3066,
+              3067,
+              3068
+            ]
+          },
+          "dropped: regexFilter uses alternation, outside Safari's documented regex syntax": {
+            "count": 1,
+            "examples": [
+              7215
+            ]
+          }
+        }
+      }
+    ],
+    "manifest": {
+      "contentScriptsRemoved": 2,
+      "why": "element hiding comes from the content blocker; without content scripts Safari asks for no site access"
+    },
+    "popup": {
+      "html": "count row removed; off note names the content blocker instead of the chrome:// site access link",
+      "js": "initiatorDomains renamed to domains in the switch rule"
+    },
+    "contentBlockerStats": {
+      "rules": 410,
+      "selectors": 13636,
+      "genericRules": 134,
+      "exceptionGroups": 275,
+      "exceptionRules": 275,
+      "ignoreRules": 1,
+      "hidingOffDomains": 188,
+      "pathPrefixExceptionsWidenedToHost": [
+        {
+          "pattern": "*://*.taboolanews.com/feed*",
+          "host": "taboolanews.com"
+        },
+        {
+          "pattern": "*://*.bing.com/search?*",
+          "host": "bing.com"
+        },
+        {
+          "pattern": "*://*.duckduckgo.com/?q=*",
+          "host": "duckduckgo.com"
+        },
+        {
+          "pattern": "*://*.yandex.com/search*",
+          "host": "yandex.com"
+        }
+      ],
+      "bytes": 260297
     }
   }
 }

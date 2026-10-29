@@ -3,3 +3,5 @@ node_modules/
 test-results/
 # Chromium writes its ruleset index here when dist/ is loaded unpacked
 dist/_metadata/
+# Xcode project written by safari/package.sh
+build/

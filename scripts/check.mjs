@@ -1,19 +1,50 @@
-// Checks dist/ against the design invariants (DESIGN.md) and Chrome's
-// declarativeNetRequest limits. Exits non-zero on any violation.
+// Checks a built extension against the design invariants (DESIGN.md) and
+// the browser's declarativeNetRequest limits. Exits non-zero on any
+// violation.
+//
+//   node scripts/check.mjs [dist]              the Chrome build
+//   node scripts/check.mjs --safari [dist-safari]
+//
+// The Safari build holds the extension in extension/ and the content
+// blocker in content-blocker/blockerList.json. The same invariants apply
+// (no JavaScript in pages, no network APIs, no remote code, minimum
+// permissions), plus: no content scripts and no stylesheets at all (the
+// content blocker hides elements, so Safari asks for no site access), no
+// chrome:// URL, rulesets limited to the resource types, condition names,
+// actions and regex syntax Apple documents for Safari, and a content
+// blocker made only of css-display-none and ignore-previous-rules rules
+// whose selectors pass the same validator as the Chrome CSS.
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
+import {
+  CONTENT_BLOCKER_ACTIONS,
+  CONTENT_BLOCKER_DOMAIN,
+  CONTENT_BLOCKER_FILE,
+  CONTENT_BLOCKER_TRIGGER_KEYS,
+  SAFARI_CONDITION_KEYS,
+  SAFARI_EXTENSION_DIR,
+  SAFARI_LIMITS,
+  SAFARI_RESOURCE_TYPES,
+  UnsupportedRegex,
+  safariRegex,
+} from "./safari.mjs";
 import { selectorProblem } from "./selector.mjs";
 
-const DIST = process.argv[2] ?? "dist";
+const args = process.argv.slice(2);
+const SAFARI = args.includes("--safari");
+const ROOT = args.find((arg) => !arg.startsWith("--")) ?? (SAFARI ? "dist-safari" : "dist");
+const DIST = SAFARI ? path.join(ROOT, SAFARI_EXTENSION_DIR) : ROOT;
+const BROWSER = SAFARI ? "Safari" : "Chrome";
 
 // Chrome limits, from the chrome.declarativeNetRequest API constants.
-const LIMITS = {
+const CHROME_LIMITS = {
   GUARANTEED_MINIMUM_STATIC_RULES: 30_000,
   MAX_NUMBER_OF_STATIC_RULESETS: 100,
   MAX_NUMBER_OF_ENABLED_STATIC_RULESETS: 50,
   MAX_NUMBER_OF_REGEX_RULES: 1_000,
 };
+const LIMITS = SAFARI ? SAFARI_LIMITS : CHROME_LIMITS;
 
 // Every manifest key and permission is an explicit decision. Adding one
 // means updating this list, and DESIGN.md says why it is needed.
@@ -27,7 +58,8 @@ const ALLOWED_MANIFEST_KEYS = new Set([
   "permissions",
   "action",
   "declarative_net_request",
-  "content_scripts",
+  // Chrome only: the Safari build has no content scripts at all.
+  ...(SAFARI ? [] : ["content_scripts"]),
 ]);
 const ALLOWED_PERMISSIONS = new Set(["declarativeNetRequest", "activeTab"]);
 const ALLOWED_ACTION_KEYS = new Set(["default_title", "default_icon", "default_popup"]);
@@ -36,15 +68,17 @@ const ALLOWED_ACTIONS = new Set(["block", "allow", "allowAllRequests"]);
 // (assigned by build.mjs, relied on by popup.js).
 const FIRST_ALLOW_RULE_ID = 1_000_000;
 // Data, stylesheets, documentation, icons, and the extension's own pages.
-const ALLOWED_EXTENSIONS = new Set([".json", ".txt", ".png", ".css", ".html", ".js"]);
+// The Safari build has no stylesheets.
+const ALLOWED_EXTENSIONS = new Set([".json", ".txt", ".png", ".html", ".js", ...(SAFARI ? [] : [".css"])]);
 // The only places JavaScript may exist: the popup page and its script. Both
 // run in the extension's own page, never in a web page. A background worker
 // or a second script is a design change, not a build detail.
 const ALLOWED_PAGES = new Set(["popup.html"]);
 const ALLOWED_SCRIPTS = new Set(["popup.js"]);
 // Browser-internal pages the popup may open in a tab. Not remote: the
-// chrome: scheme never leaves the browser.
-const ALLOWED_INTERNAL_URLS = new Set(["chrome://extensions/?id="]);
+// chrome: scheme never leaves the browser. Safari has no such page; its
+// popup names none.
+const ALLOWED_INTERNAL_URLS = new Set(SAFARI ? [] : ["chrome://extensions/?id="]);
 // Content scripts may carry CSS and say where it applies, nothing else.
 // "js" is deliberately absent: no JavaScript ever runs in pages.
 const ALLOWED_CONTENT_SCRIPT_KEYS = new Set(["matches", "exclude_matches", "css", "run_at", "all_frames"]);
@@ -76,6 +110,12 @@ const FORBIDDEN_IN_SCRIPTS = [
 ];
 // The only declaration the stylesheets may contain.
 const DECLARATION = "{display:none!important}";
+// Outside escapes and quoted strings, nothing in a stylesheet or a content
+// blocker selector may look like an at-rule, a resource reference or markup.
+const FORBIDDEN_IN_CSS = /@|url\(|<|expression\(|behavior:|-moz-binding/i;
+// Chrome's condition keys that Safari does not document; the Safari build
+// renames them (scripts/safari.mjs).
+const CHROME_ONLY_CONDITION_KEYS = ["initiatorDomains", "excludedInitiatorDomains"];
 
 const errors = [];
 const warnings = [];
@@ -107,6 +147,9 @@ function remoteUrls(text) {
     .filter((url) => !ALLOWED_INTERNAL_URLS.has(url));
 }
 
+// Escapes and quoted attribute values may contain anything; the rest must not.
+const bareCss = (text) => text.replace(/\\./g, "").replace(/"[^"]*"|'[^']*'/g, '""');
+
 const rel = (file) => path.relative(DIST, file).split(path.sep).join("/");
 // Chromium writes its ruleset index into _metadata/ when dist/ is loaded
 // unpacked; that is Chromium's, not ours.
@@ -133,6 +176,7 @@ for (const permission of manifest.permissions ?? []) {
 if (manifest.background) fail("no background scripts allowed");
 if (manifest.host_permissions) fail("no host permissions allowed");
 if (manifest.optional_permissions || manifest.optional_host_permissions) fail("no optional permissions allowed");
+if (SAFARI && manifest.content_scripts) fail("no content scripts allowed in the Safari build (the content blocker hides elements)");
 walkStrings(manifest, (at, value) => {
   if (!at.startsWith("content_scripts") && URL_PATTERN.test(value)) fail(`URL in manifest at ${at}: ${value}`);
 });
@@ -183,10 +227,7 @@ let cssBytes = 0;
 for (const file of [...cssFiles].sort()) {
   const text = await readFile(path.join(DIST, file), "utf8");
   cssBytes += Buffer.byteLength(text);
-  // Escapes and quoted attribute values may contain anything; outside them
-  // nothing may look like an at-rule, a resource reference or markup.
-  const bare = text.replace(/\\./g, "").replace(/"[^"]*"|'[^']*'/g, '""');
-  if (/@|url\(|<|expression\(|behavior:|-moz-binding/i.test(bare)) fail(`${file}: forbidden text in stylesheet`);
+  if (FORBIDDEN_IN_CSS.test(bareCss(text))) fail(`${file}: forbidden text in stylesheet`);
   const rules = text.split(DECLARATION);
   if (rules.pop().trim() !== "") fail(`${file}: text after the last rule`);
   for (const rule of rules) {
@@ -225,6 +266,7 @@ for (const page of pages) {
     if (!src.endsWith(".png") || !names.has(src)) fail(`${page}: image must be a bundled PNG: ${src}`);
   }
   if (/url\(/i.test(html)) fail(`${page}: url() in page styles`);
+  if (SAFARI && /\bid="count-row"/.test(html)) fail(`${page}: the Safari popup must not show the blocked count`);
 }
 let scriptBytes = 0;
 for (const script of scripts) {
@@ -236,10 +278,16 @@ for (const script of scripts) {
     const match = pattern.exec(text);
     if (match) fail(`${script}: ${name} is not allowed (at "${match[0].trim()}")`);
   }
+  if (SAFARI) {
+    for (const key of CHROME_ONLY_CONDITION_KEYS) {
+      if (new RegExp(`\\b${key}\\b`).test(text)) fail(`${script}: ${key} is not a condition name Safari documents (it uses domains/excludedDomains)`);
+    }
+  }
 }
 
 // 6. Rulesets: allowed actions only, ids split by action, URLs only as
-// match patterns.
+// match patterns. For Safari also: only documented resource types,
+// condition names and regex syntax, and allowAllRequests for main_frame only.
 const resources = manifest.declarative_net_request?.rule_resources ?? [];
 const rulesetPaths = new Set(resources.map((r) => path.join(DIST, r.path)));
 const summary = [];
@@ -267,6 +315,28 @@ for (const resource of resources) {
       if (at === "condition.urlFilter" || at === "condition.regexFilter") patternUrls++;
       else fail(`${resource.id}: URL outside a match pattern in rule ${rule.id} at ${at}: ${value}`);
     });
+    if (!SAFARI) continue;
+    const condition = rule.condition ?? {};
+    for (const key of Object.keys(condition)) {
+      if (!SAFARI_CONDITION_KEYS.has(key)) fail(`${resource.id}: rule ${rule.id} uses condition ${key}, which Safari does not document`);
+    }
+    for (const key of ["resourceTypes", "excludedResourceTypes"]) {
+      for (const type of condition[key] ?? []) {
+        if (!SAFARI_RESOURCE_TYPES.has(type)) fail(`${resource.id}: rule ${rule.id} ${key} has ${type}, not a resource type in Safari`);
+      }
+      if (condition[key] && condition[key].length === 0) fail(`${resource.id}: rule ${rule.id} has an empty ${key}`);
+    }
+    if (rule.action?.type === "allowAllRequests" && JSON.stringify(condition.resourceTypes) !== '["main_frame"]') {
+      fail(`${resource.id}: rule ${rule.id} allowAllRequests must be for main_frame only in Safari`);
+    }
+    if (condition.regexFilter) {
+      try {
+        if (safariRegex(condition.regexFilter) !== condition.regexFilter) fail(`${resource.id}: rule ${rule.id} regexFilter is not in Safari's regex syntax as written`);
+      } catch (error) {
+        if (!(error instanceof UnsupportedRegex)) throw error;
+        fail(`${resource.id}: rule ${rule.id} regexFilter uses ${error.message}, outside Safari's regex syntax`);
+      }
+    }
   }
   if (regexRules > LIMITS.MAX_NUMBER_OF_REGEX_RULES) fail(`${resource.id}: ${regexRules} regex rules exceeds ${LIMITS.MAX_NUMBER_OF_REGEX_RULES}`);
   // The popup's switch rule must outrank every static rule.
@@ -287,34 +357,100 @@ for (const file of files) {
   for (const match of text.matchAll(/[a-z][a-z0-9+.-]*:\/\/\S+/gi)) docUrls.push(`${rel(file)}: ${match[0]}`);
 }
 
-// 8. Chrome limits.
+// 8. Limits.
 const totalRegex = summary.reduce((n, s) => n + s.regexRules, 0);
 if (resources.length > LIMITS.MAX_NUMBER_OF_STATIC_RULESETS) fail(`${resources.length} static rulesets exceeds ${LIMITS.MAX_NUMBER_OF_STATIC_RULESETS}`);
 if (enabledRulesets > LIMITS.MAX_NUMBER_OF_ENABLED_STATIC_RULESETS) fail(`${enabledRulesets} enabled rulesets exceeds ${LIMITS.MAX_NUMBER_OF_ENABLED_STATIC_RULESETS}`);
-if (enabledRules > LIMITS.GUARANTEED_MINIMUM_STATIC_RULES) {
+if (!SAFARI && enabledRules > LIMITS.GUARANTEED_MINIMUM_STATIC_RULES) {
   warnings.push(
     `${enabledRules} enabled rules exceeds the guaranteed ${LIMITS.GUARANTEED_MINIMUM_STATIC_RULES}; ` +
       "the rest comes from Chrome's shared global pool and may not be available",
   );
 }
 
+// 9. Safari content blocker: css-display-none and ignore-previous-rules only,
+// every selector through the validator, domains as lowercase hosts, and the
+// hiding rules before the ignore rule that cancels them.
+const blocker = { rules: 0, selectors: 0, hideRules: 0, ignoreRules: 0, bytes: 0 };
+if (SAFARI) {
+  const file = path.join(ROOT, CONTENT_BLOCKER_FILE);
+  const text = await readFile(file, "utf8");
+  blocker.bytes = Buffer.byteLength(text);
+  const rules = JSON.parse(text);
+  if (!Array.isArray(rules) || rules.length === 0) fail(`${CONTENT_BLOCKER_FILE}: must be a non-empty array of rules`);
+  let seenIgnore = false;
+  for (const [index, rule] of (Array.isArray(rules) ? rules : []).entries()) {
+    const where = `${CONTENT_BLOCKER_FILE} rule ${index}`;
+    blocker.rules++;
+    if (JSON.stringify(Object.keys(rule).sort()) !== '["action","trigger"]') fail(`${where}: keys must be trigger and action`);
+    const trigger = rule.trigger ?? {};
+    for (const key of Object.keys(trigger)) {
+      if (!CONTENT_BLOCKER_TRIGGER_KEYS.has(key)) fail(`${where}: trigger key not allowed: ${key}`);
+    }
+    if (trigger["url-filter"] !== ".*") fail(`${where}: url-filter must be ".*" (hiding is decided by domain only)`);
+    if (trigger["if-domain"] && trigger["unless-domain"]) fail(`${where}: if-domain and unless-domain together`);
+    for (const key of ["if-domain", "unless-domain"]) {
+      const domains = trigger[key];
+      if (domains === undefined) continue;
+      if (!Array.isArray(domains) || domains.length === 0) fail(`${where}: ${key} must be a non-empty array`);
+      for (const domain of domains ?? []) {
+        if (typeof domain !== "string" || !CONTENT_BLOCKER_DOMAIN.test(domain)) fail(`${where}: bad domain in ${key}: ${domain}`);
+      }
+    }
+    const type = rule.action?.type;
+    if (!CONTENT_BLOCKER_ACTIONS.has(type)) fail(`${where}: action not allowed: ${type}`);
+    const actionKeys = Object.keys(rule.action ?? {}).sort().join(",");
+    if (type === "css-display-none") {
+      blocker.hideRules++;
+      if (seenIgnore) fail(`${where}: hiding rule after the ignore-previous-rules rule, which would not cancel it`);
+      if (actionKeys !== "selector,type") fail(`${where}: css-display-none action must have exactly type and selector`);
+      const selector = rule.action.selector;
+      if (typeof selector !== "string" || !selector.trim()) fail(`${where}: selector missing`);
+      else {
+        if (FORBIDDEN_IN_CSS.test(bareCss(selector))) fail(`${where}: forbidden text in selector`);
+        const problem = selectorProblem(selector);
+        if (problem) fail(`${where}: ${problem}: ${selector.slice(0, 80)}`);
+        blocker.selectors += selector.split(",").length;
+      }
+    } else if (type === "ignore-previous-rules") {
+      blocker.ignoreRules++;
+      seenIgnore = true;
+      if (actionKeys !== "type") fail(`${where}: ignore-previous-rules action must have only a type`);
+      if (!trigger["if-domain"]) fail(`${where}: ignore-previous-rules must be limited by if-domain`);
+    }
+  }
+  if (blocker.rules > LIMITS.CONTENT_BLOCKER_RULES) fail(`${blocker.rules} content blocker rules exceeds ${LIMITS.CONTENT_BLOCKER_RULES}`);
+}
+
 console.table(summary);
+console.log(`${BROWSER} build in ${DIST}`);
 console.log(`Files: ${files.length} (${cssFiles.size} stylesheets, ${pages.length} page, ${scripts.length} script)`);
 console.log(`Permissions: ${JSON.stringify(manifest.permissions ?? [])}`);
 console.log(
-  `Content scripts: ${contentScripts.length} entries, CSS only (no js key anywhere), ` +
-    `${contentScripts.filter((e) => e.matches?.includes("<all_urls>")).length} on all URLs`,
+  SAFARI
+    ? "Content scripts: none (no site access); element hiding is the content blocker"
+    : `Content scripts: ${contentScripts.length} entries, CSS only (no js key anywhere), ` +
+        `${contentScripts.filter((e) => e.matches?.includes("<all_urls>")).length} on all URLs`,
 );
-console.log(`Stylesheets: ${cssRules} rules, ${cssSelectors} selectors, ${cssBytes} bytes, every declaration is ${DECLARATION}`);
+if (!SAFARI) console.log(`Stylesheets: ${cssRules} rules, ${cssSelectors} selectors, ${cssBytes} bytes, every declaration is ${DECLARATION}`);
 console.log(
   `Scripts: ${scripts.join(", ") || "none"} (${scriptBytes} bytes), loaded only by ${pages.join(", ") || "no page"}; ` +
     "no network API, no remote URL, no code in pages, no background worker",
 );
-console.log(
-  `Enabled static rules: ${enabledRules} of ${LIMITS.GUARANTEED_MINIMUM_STATIC_RULES} guaranteed ` +
-    `(${(LIMITS.GUARANTEED_MINIMUM_STATIC_RULES - enabledRules).toLocaleString("en")} headroom, ` +
-    `${((enabledRules / LIMITS.GUARANTEED_MINIMUM_STATIC_RULES) * 100).toFixed(1)}% used)`,
-);
+if (SAFARI) {
+  console.log(`Enabled static rules: ${enabledRules} in ${enabledRulesets} rulesets (Safari: ${LIMITS.MAX_NUMBER_OF_STATIC_RULESETS} rulesets, ${LIMITS.MAX_NUMBER_OF_ENABLED_STATIC_RULESETS} enabled)`);
+  console.log(
+    `Content blocker: ${blocker.rules} rules (${blocker.hideRules} css-display-none, ${blocker.ignoreRules} ignore-previous-rules), ` +
+      `${blocker.selectors} selectors, ${blocker.bytes} bytes; limit ${LIMITS.CONTENT_BLOCKER_RULES} rules ` +
+      `(${((blocker.rules / LIMITS.CONTENT_BLOCKER_RULES) * 100).toFixed(1)}% used)`,
+  );
+} else {
+  console.log(
+    `Enabled static rules: ${enabledRules} of ${LIMITS.GUARANTEED_MINIMUM_STATIC_RULES} guaranteed ` +
+      `(${(LIMITS.GUARANTEED_MINIMUM_STATIC_RULES - enabledRules).toLocaleString("en")} headroom, ` +
+      `${((enabledRules / LIMITS.GUARANTEED_MINIMUM_STATIC_RULES) * 100).toFixed(1)}% used)`,
+  );
+}
 console.log(`Regex rules: ${totalRegex} in total (limit ${LIMITS.MAX_NUMBER_OF_REGEX_RULES} per ruleset)`);
 console.log(`Rulesets: ${resources.length} static, ${enabledRulesets} enabled; block rule ids < ${FIRST_ALLOW_RULE_ID} <= allow rule ids`);
 console.log(`URLs in documentation files (never loaded): ${docUrls.length ? "\n  " + docUrls.join("\n  ") : "none"}`);
@@ -323,4 +459,8 @@ if (errors.length) {
   console.error(`FAILED:\n  ${errors.slice(0, 30).join("\n  ")}${errors.length > 30 ? `\n  ... ${errors.length - 30} more` : ""}`);
   process.exit(1);
 }
-console.log("OK: JavaScript only in the popup, no network APIs, no remote URLs outside match patterns, minimum permissions, within limits");
+console.log(
+  SAFARI
+    ? "OK: JavaScript only in the popup, no network APIs, no remote URLs outside match patterns, no content scripts, minimum permissions, Safari rule syntax, within limits"
+    : "OK: JavaScript only in the popup, no network APIs, no remote URLs outside match patterns, minimum permissions, within limits",
+);

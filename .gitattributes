@@ -1,2 +1,3 @@
 dist/** linguist-generated=true
+dist-safari/** linguist-generated=true
 build-report.json linguist-generated=true

@@ -101,7 +101,8 @@ function stylesheet(selectors) {
 // filters: [{ line, filter }] where filter is an adblockpluscore Filter of
 // type elemhide, elemhideexception, elemhideemulation, snippet or invalid,
 // or an allowing filter with $generichide/$elemhide. Returns the CSS files,
-// the content_scripts entries and statistics.
+// the content_scripts entries, the details the Safari build needs, and
+// statistics.
 export function buildCosmetic(filters) {
   const stats = { filters: 0, used: 0, skipped: 0, skippedByReason: new Map() };
   const skip = (reason, line) => {
@@ -182,8 +183,9 @@ export function buildCosmetic(filters) {
       all.push(selector);
       continue;
     }
-    excepted.push(selector);
-    for (const domain of [...exclude, ...domains]) exceptedDomains.add(domain);
+    const exceptedOn = [...new Set([...exclude, ...domains])].sort();
+    excepted.push({ selector, domains: exceptedOn });
+    for (const domain of exceptedOn) exceptedDomains.add(domain);
   }
 
   const files = new Map();
@@ -202,12 +204,20 @@ export function buildCosmetic(filters) {
     });
   };
   entry(GENERIC_FILE, all, hiding);
-  entry(EXCEPTED_FILE, excepted, [...hiding, ...[...exceptedDomains].map(matchPattern)]);
+  entry(
+    EXCEPTED_FILE,
+    excepted.map(({ selector }) => selector),
+    [...hiding, ...[...exceptedDomains].map(matchPattern)],
+  );
 
   const cssBytes = [...files.values()].reduce((n, css) => n + Buffer.byteLength(css), 0);
   return {
     files,
     contentScripts,
+    // What the Safari content blocker is built from (scripts/safari.mjs):
+    // the generic selectors, the excepted ones with their exact domain sets,
+    // and the $generichide/$elemhide match patterns.
+    details: { generic: all, excepted, hidingExcludes: hiding },
     stats: {
       filters: stats.filters,
       used: stats.used,

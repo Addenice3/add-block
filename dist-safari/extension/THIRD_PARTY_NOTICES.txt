@@ -1,0 +1,23 @@
+add-block third-party notices
+=============================
+
+The rulesets in rulesets/ are converted from these filter lists:
+
+  EasyList     (rulesets/easylist.json)
+  EasyPrivacy  (rulesets/easyprivacy.json)
+
+  Copyright: The EasyList authors, https://easylist.to/
+  Licence:   dual licensed, at your option, under
+             - GNU General Public License version 3 or later
+               https://www.gnu.org/licenses/gpl-3.0.html
+             - Creative Commons Attribution-ShareAlike 3.0 Unported or later
+               https://creativecommons.org/licenses/by-sa/3.0/
+             See https://easylist.to/pages/licence.html
+
+  Changes:   the filters were converted to Chrome declarativeNetRequest rules
+             with abp2dnr; cosmetic and other non-network filters were left
+             out, and rules that differ only in host were merged. The exact
+             list versions (source URL, date, SHA-256) are pinned in
+             lists.lock.json in the add-block source repository.
+
+The URLs above are for reference only. The extension never loads them.

@@ -3,7 +3,10 @@
 A personal ad and tracker blocker for Chrome, Edge and Safari, built from one
 Manifest V3 codebase. v0.1 targets Chrome and does network blocking only.
 v0.2 adds element hiding with static CSS. v0.3 adds a toolbar popup with a
-per-site switch, a blocked-request count, and icons.
+per-site switch, a blocked-request count, and icons. v0.4 adds the Safari
+build: the same extension with its rulesets transformed where Apple's
+documentation says Safari differs, and element hiding as a native Safari
+content blocker instead of CSS content scripts (see "Safari" at the end).
 
 ## Invariants
 
@@ -24,36 +27,57 @@ change needs to break one, update this file first and say why.
   There is no background worker (nothing runs between clicks) and no code
   in web pages. The script uses none of `fetch`, `XMLHttpRequest`,
   `WebSocket`, `EventSource`, `sendBeacon`, `importScripts`, dynamic
-  `import()`, workers, `eval` or the `scripting` API, and no remote URL; the
-  only URL it knows is the browser-internal `chrome://extensions/?id=` page
-  it can open in a tab.
+  `import()`, workers, `eval` or the `scripting` API, and no URL at all.
+  The only URL in the extension is in the popup page: the browser-internal
+  `chrome://extensions/?id=` page named by the Chrome popup's "site access"
+  link (a `data-url` attribute the script reads), which it can open in a
+  tab. The Safari popup page has no such link and no URL.
   The manifest has no remote URLs either (`update_url`, `homepage_url`,
   remote CSP sources and the like).
-- **CSS only in pages.** The only thing the extension puts into a web page
-  is static CSS from `content_scripts` entries with a `css` key. No `js`
-  key, no `scripting` permission, no background worker that could inject
-  anything. The stylesheets contain selectors and `display:none!important`
-  and nothing else: no `@import`, no `url()`, no other declarations. CSS
-  cannot read the page or send anything, so the extension still sees no
-  browsing data.
+- **CSS only in pages (Chrome).** The only thing the extension puts into a
+  web page is static CSS from `content_scripts` entries with a `css` key.
+  No `js` key, no `scripting` permission, no background worker that could
+  inject anything. The stylesheets contain selectors and
+  `display:none!important` and nothing else: no `@import`, no `url()`, no
+  other declarations. CSS cannot read the page or send anything, so the
+  extension still sees no browsing data.
+- **Nothing in pages (Safari).** The Safari build has no content scripts.
+  Element hiding is a Safari content blocker: a rule list that Safari
+  compiles and applies by itself, made of `css-display-none` rules with
+  the same selectors and the same `display: none`, and
+  `ignore-previous-rules` for the sites that except them. A content blocker
+  cannot read pages or send anything either, and it needs no site access.
 - `npm run check` enforces this on `dist/`: only known file types
   (`.json`, `.txt`, `.png`, `.css`, `.html`, `.js`); the only page is
   `popup.html` and the only script is `popup.js`; the page loads only that
   script and bundled PNGs, with no inline script, module, `<link>`,
-  `<iframe>`, event handler or `url()`; the script contains none of the
-  network, code-loading or page-scripting APIs above (matched as words
-  anywhere in the file, comments and strings included) and no URL other
-  than the allowed internal one; no URL anywhere in the manifest outside
-  match patterns; rule actions limited to `block`/`allow`/`allowAllRequests`;
-  URLs in rulesets only inside `urlFilter`/`regexFilter` match patterns; no
-  `background`, no `host_permissions`, no optional permissions, no `js` in
-  any content script; and every stylesheet rule re-parsed by the selector
-  validator with exactly the one declaration. `npm test` proves that the
-  check fails on each of these: a `js` content script, a background worker,
-  every listed network API, a remote or protocol-relative URL, the
-  `scripting` API, `eval`, a remote or inline script in the page, a second
-  page, a permission outside the allowlist, and a rule id in the wrong
-  range (see the per-site switch below).
+  `<iframe>`, event handler or `url()`, and no URL other than the allowed
+  internal one; the script contains none of the network, code-loading or
+  page-scripting APIs above (matched as words anywhere in the file,
+  comments and strings included) and no URL at all; no URL anywhere in the
+  manifest outside match patterns; rule actions limited to
+  `block`/`allow`/`allowAllRequests`; URLs in rulesets only inside
+  `urlFilter`/`regexFilter` match patterns; no `background`, no
+  `host_permissions`, no optional permissions, no `js` in any content
+  script; and every stylesheet rule re-parsed by the selector validator
+  with exactly the one declaration. `npm test` proves that the check fails
+  on each of these: a `js` content script, a background worker, every
+  listed network API, a remote or protocol-relative URL, the `scripting`
+  API, `eval`, a remote or inline script in the page, a second page, a
+  permission outside the allowlist, and a rule id in the wrong range (see
+  the per-site switch below).
+- `npm run check` runs a second time with `--safari` on `dist-safari/`,
+  with the same invariants and these on top: no `content_scripts` key and
+  no stylesheet anywhere, no `chrome://` URL, no count row in the popup,
+  rulesets limited to the resource types, condition names, actions and
+  regex syntax Apple documents for Safari (below), and a content blocker
+  made only of `css-display-none` and `ignore-previous-rules` rules whose
+  selectors pass the same validator, with every hiding rule before the
+  ignore rule. `npm test` proves it rejects a content script, a `chrome://`
+  URL, the count row, each Chrome-only rule feature, a content blocker rule
+  that blocks requests, a selector with `url()` or an unknown pseudo-class,
+  a hiding rule after the ignore rule, and an ignore rule without
+  `if-domain`.
 
 ### 2. Minimum permissions
 
@@ -70,9 +94,15 @@ change needs to break one, update this file first and say why.
   restrict it to chosen sites or to a click). A packaged install shows the
   warning "Read and change all your data on all websites" for it. The
   warning describes what a content script *could* do; this one is CSS,
-  which can neither read nor send. There is no narrower option: CSS cannot
-  be applied to a page without matching that page, and `activeTab` would
-  need a click on every page.
+  which can neither read nor send. There is no narrower option in Chrome:
+  CSS cannot be applied to a page without matching that page, and
+  `activeTab` would need a click on every page.
+- Safari asks the user for access per site for the same content scripts
+  (the owner saw the prompt with the v0.2 build, warning that the extension
+  could read pages and browsing history). The Safari build therefore has no
+  content scripts at all and gets hiding from a content blocker, which
+  Safari applies without any site access. The Safari extension's
+  permissions are `declarativeNetRequest` and `activeTab` only.
 - `scripts/check.mjs` holds an allowlist of manifest keys and permissions. A
   new feature that needs a new key or permission has to add it to that list
   and to the log below, with the narrowest option that works. Prefer static
@@ -83,7 +113,7 @@ change needs to break one, update this file first and say why.
 | --- | --- | --- |
 | `declarativeNetRequest` | 0.1 | Static rulesets. Block/allow rules need no host permissions. |
 | `minimum_chrome_version: 118` | 0.1 | abp2dnr leaves out `isUrlFilterCaseSensitive: false`, which only became the default in Chrome 118. |
-| `content_scripts` with `css`, `matches: ["<all_urls>"]` | 0.2 | Element hiding from EasyList's generic cosmetic filters, as static CSS. Implies site access to all sites (see above). Keys limited to `matches`, `exclude_matches`, `css`, `run_at`, `all_frames`. |
+| `content_scripts` with `css`, `matches: ["<all_urls>"]` | 0.2 | Element hiding from EasyList's generic cosmetic filters, as static CSS. Implies site access to all sites (see above). Keys limited to `matches`, `exclude_matches`, `css`, `run_at`, `all_frames`. Chrome only: removed from the Safari build in 0.4, where a content blocker hides elements. |
 | `activeTab` | 0.3 | The popup needs the current tab's site (its URL) and its matched rules. No warning; granted per click, per tab. Content scripts on `<all_urls>` do not expose tab URLs (tested), so there is no way around it. |
 | `action` (`default_popup`, `default_icon`, `default_title`) | 0.3 | The toolbar button and its popup. Keys limited to those three. |
 | `icons` | 0.3 | Toolbar, extension list, stores. Bundled PNGs only. |
@@ -129,11 +159,16 @@ install words it "Read and change all your data on all websites").
   in `dist/` is edited by hand. The icon PNGs are rendered from
   `icons/add-block.svg` by `npm run icons` (Playwright's Chromium) and
   committed; `npm run build` only copies them.
-- `dist/` is the same for every browser. Only packaging differs: a zip of
-  `dist/` for Chrome and Edge, and an Xcode app wrapping `dist/` for Safari.
-- If Safari needs a different rule dialect (see below), that is a
-  packaging-time transform of the generated rulesets, not a second source
-  tree.
+- `dist/` is the Chrome build and loads unchanged in Edge. `dist-safari/`
+  is derived from it by `scripts/safari.mjs` in the same `npm run build`,
+  never from `src/` directly and never by hand: the rulesets go through
+  the Safari transform, the popup page and script through two small
+  patches that must each match exactly once (the build fails when a change
+  to `src/` moves them), and the cosmetic step's output becomes the content
+  blocker. There is no second source tree. `safari/` holds only what runs
+  on the owner's Mac: the packaging script and the WebKit compile check.
+- Both outputs are committed and reproducible:
+  `npm run build && git diff --exit-code dist dist-safari build-report.json`.
 
 ### 5. Licences
 
@@ -164,18 +199,32 @@ npm run build          for each pinned list:
                        turn the generic cosmetic filters of all lists into CSS
                        write dist/rulesets/<id>.json, dist/css/generic/*.css,
                          dist/manifest.json (with content_scripts) and build-report.json
-npm run check          invariants and Chrome limits, on dist/
-npm test               Playwright + Chromium: load dist/, check blocking, hiding,
+                       then dist-safari/ from dist/ (scripts/safari.mjs):
+                         rulesets transformed for Safari (see "Safari"),
+                         manifest without content_scripts, popup patched,
+                         content-blocker/blockerList.json from the generic selectors
+npm run check          invariants and Chrome limits on dist/, then with --safari
+                         the same plus Safari rule syntax and the content blocker
+npm test               test/safari.test.mjs (no browser): dist-safari/ layout and
+                         JSON, limits, the transform on fixtures and on the built
+                         rulesets (regex equivalence by sampling), Chrome output
+                         unchanged, check --safari rejections;
+                       then Playwright + Chromium: load dist/, check blocking, hiding,
                          stylesheet parsing, merge equivalence, the popup and its
                          switch (off, on, after a restart), Chrome's site access
                          setting, and that check rejects code where it is not allowed
 npm run icons          render icons/add-block.svg to src/icons/*.png and icons/add-block-512.png
+safari/package.sh      on a Mac: WebKit compile check, safari-web-extension-packager,
+                         content blocker wiring (see "Safari")
 ```
 
 `build-report.json` records, per list, how many filters were converted,
 handed to the cosmetic step, or dropped, why, with examples, and the final
-rule counts; and under `cosmetic`, how many selectors were used or skipped
-and why. It is committed, so a list update shows its effect in the diff.
+rule counts; under `cosmetic`, how many selectors were used or skipped and
+why; and under `safari`, per ruleset how many rules were changed or dropped
+by the Safari transform and why, with example ids, plus the content
+blocker's counts. It is committed, so a list update shows its effect in
+the diff.
 
 ## Converter: @eyeo/abp2dnr
 
@@ -335,8 +384,11 @@ why there is no background worker and no `storage` permission:
   five minutes, so the number is "since this page was opened" and can
   include a few from a page the tab showed shortly before. Chrome limits
   the call to 20 per 10 minutes per extension; a popup open costs one call
-  (two with the reload after a switch). When the call fails, or the API is
-  missing (Safari), the popup shows "n/a" with the reason in its tooltip.
+  (two with the reload after a switch). When the call fails, the popup
+  shows "n/a" with the reason in its tooltip. The Safari popup page has no
+  count row, and the script then never calls `getMatchedRules` (Apple lists
+  the function as supported, but whether `activeTab` is enough for it in
+  Safari is unknown, and the owner asked for the count to be hidden).
   The alternative, `declarativeNetRequestFeedback`, would give the same
   count for every tab at all times with the warning "Read your browsing
   history", so it is not used.
@@ -352,7 +404,10 @@ why there is no background worker and no `storage` permission:
   blocking does not depend on site access, so it keeps working everywhere.
   `npm test` sets "On specific sites" through `chrome.developerPrivate` and
   checks exactly that: CSS on the listed site only, requests blocked on
-  both. The popup's "site access" link opens the extension's details page.
+  both. The popup's "site access" link opens the extension's details page
+  (the page's `data-url` plus the extension id; the script holds no URL).
+  In Safari the equivalent is the content blocker's own switch in Safari's
+  extension settings, which the Safari popup's note names instead.
   Chrome has no per-extension "all sites except this one" option. Chrome's
   per-site "restricted sites" list would be the direct answer, but the API
   behind it (`developerPrivate.addUserSpecifiedSites`) is a no-op in the
@@ -415,37 +470,143 @@ extension does not have (counts are in `build-report.json`):
 same limits. `dist/` should load unchanged through edge://extensions → Load
 unpacked. For the Edge Add-ons store, upload a zip of `dist/`.
 
-**Safari** needs work beyond packaging:
-- Packaging: `xcrun safari-web-extension-converter dist/` produces an Xcode
-  project. That needs macOS and Xcode, and the extension ships inside a
-  small app. The store and Xcode also want icons: `src/icons/` has 16 to
-  128 and `icons/add-block-512.png` the large one.
-- Rule dialect: abp2dnr's Safari mode rewrites `allowAllRequests` to
-  `allow`, `initiatorDomains` to `domains` and `excludedInitiatorDomains` to
-  `excludedDomains`, and drops `webbundle`. That suggests Safari lacks these
-  features, at least in some versions. The Safari package should be built
-  with that mode, as a transform in the packaging step.
-- To check on the target Safari version before relying on it: support for
-  `requestDomains` (the merged rules depend on it), the regex subset Safari
-  accepts, the default for `isUrlFilterCaseSensitive` (the rules assume
-  case-insensitive), and Safari's rule-count limits (Safari compiles DNR into
-  WebKit content rule lists, so a merged rule may count as many rules).
-- Safari ignores `minimum_chrome_version`.
-- Content script CSS: Safari web extensions support `content_scripts` with
-  `css`, `exclude_matches`, `all_frames` and `run_at`, and the stylesheets
-  only use selectors WebKit supports (`:has()` since Safari 15.4). Safari
-  asks the user to allow the extension on each site (or all sites); the CSS
-  only applies where it is allowed, the DNR rules apply everywhere. Safari
-  also has a native alternative, a content blocker `css-display-none`
-  action, that does not need any site access; a Safari package could
-  convert the stylesheets into that at packaging time.
-- Popup: Safari supports `action` popups, `activeTab`, `tabs.query`,
-  `tabs.reload` and dynamic DNR rules (`updateDynamicRules`,
-  `getDynamicRules`), so the switch should work. Safari's dynamic rule
-  limit is lower than Chrome's (check it; two rules per site). Safari's
-  Safari-mode conversion turns `allowAllRequests` into `allow`; the
-  per-request `allow` rule (rule 2) then carries the switch. Safari has no
-  `getMatchedRules`, so the count shows "n/a" with that reason. The "site
-  access" link opens a `chrome://` page and does nothing in Safari; Safari's
-  own per-site permission prompt is the equivalent. Safari also shows its
-  own permission wording for `activeTab` and the content scripts.
+**Safari** has its own build, `dist-safari/`, described next.
+
+## Safari
+
+The Safari build is the Chrome build with three differences, all made at
+build time by `scripts/safari.mjs` from `dist/` (never by hand, never from
+a second source): the rulesets are transformed where Apple's documentation
+says Safari differs, the CSS content scripts are replaced by a native
+content blocker, and the popup loses its count and its `chrome://` link.
+Everything else is identical, including the permissions
+(`declarativeNetRequest`, `activeTab`).
+
+Sources, all on developer.apple.com (webkit.org was not reachable from the
+build environment): "Blocking content with your Safari web extension"
+(what `declarativeNetRequest` supports in Safari), "Creating a content
+blocker" (rule syntax, trigger fields, the regex table), "Packaging a web
+extension for Safari" and "Running your Safari web extension" (the
+packager, temporary installs, unsigned extensions), "Managing Safari web
+extension permissions", and the Safari release notes (15 through 27). The
+owner's own test counts as evidence too: the v0.3 Chrome build loaded as a
+temporary extension in macOS Safari with no errors (Safari 16.4 and later
+show `declarativeNetRequest` errors in the extension's settings pane, so
+"no errors" means the rulesets loaded) and scored 97/100 on
+adblock-tester.com, the same as Chrome. Since host-only rules are merged
+into `requestDomains` rules and those cover the hosts that test checks,
+`requestDomains` works (Safari 16.4 added it).
+
+### Ruleset transform
+
+Applied to every rule of both rulesets; `build-report.json` under `safari`
+counts each change with example rule ids. Chrome's `dist/rulesets/` is
+untouched and byte-identical to v0.3 (`npm test` checks against `main`).
+
+| Change | Rules (v0.4 build) | Why |
+| --- | ---: | --- |
+| `initiatorDomains` → `domains`, `excludedInitiatorDomains` → `excludedDomains` | 955 + 161 | Apple's Safari 17.2 release notes name the conditions "domains, requestDomains, excludedDomains, and excludedRequestDomains"; Chrome's newer names appear in no Apple document. abp2dnr's Safari mode makes the same rename. The risk of leaving Chrome's names is not a load error (the owner saw none) but a rule that ignores its domain condition and blocks everywhere, so the documented names are used. |
+| `csp_report`, `object`, `webbundle` removed from `resourceTypes` | 126 | Apple lists Safari's resource types as main_frame, sub_frame, stylesheet, script, image, font, xmlhttprequest, ping, media, websocket, other. The same types would be removed from `excludedResourceTypes` (none in these lists): excluding a type Safari never sees excludes nothing. |
+| Rule dropped: every resource type unsupported | 2 | Two `allow` rules for `$object` only. Nothing they could match exists in Safari. |
+| `allowAllRequests` limited to `main_frame` | 4 | "allowAllRequests (only for main_frame)". The four `$document` exceptions keep their main-frame effect and lose it for iframes of those hosts. |
+| Regex counted quantifiers expanded | 7 | Apple's url-filter syntax table has `.`, `.*`, `\.`, `[a-b]`, `(abc)`, `+`, `*`, `?` and no `{n}`, `{n,}`, `{n,m}`. `x{3}` becomes `xxx`, `x{2,}` becomes `xx+`, `x{1,3}` becomes `xx?x?`: the same language, which `npm test` checks by sampling strings against both forms. Two regex rules needed nothing. |
+| Rule dropped: regex outside the subset | 1 | `(td\|tdbank)`: alternation is not in the table. Also refused, had the lists used them: `\d`-style classes, `[^…]`, lazy quantifiers, lookaround, non-ASCII. Two things beyond the table are accepted because every URL regex needs them: a backslash before a non-alphanumeric character (`\/`, `\?`) and `^`/`$` at the ends. |
+
+Not changed, on purpose: `isUrlFilterCaseSensitive` is left unset, because
+Safari 16.4 made its default `false`, which is what the rules assume (Chrome
+118 did the same); `requestDomains` and `domainType` are documented;
+`priority` is kept (Safari 26 fixed its ordering). `minimum_chrome_version`
+stays in the manifest: Safari ignores it and the packager only warns.
+Rule ids keep their Chrome values, with gaps where rules were dropped, so
+the block/allow id split holds and `npm run check --safari` verifies it.
+
+The popup's switch rule 2 (`allow` for everything the site's pages
+request) is written by the Safari popup with `domains` instead of
+`initiatorDomains`, the one change to `popup.js`. Rule 1
+(`allowAllRequests`, `main_frame`) is in Safari's supported subset.
+
+### Element hiding: the content blocker
+
+`dist-safari/content-blocker/blockerList.json` is a Safari content blocker
+list built from the same cosmetic data as the Chrome CSS
+(`buildCosmetic` returns it as `details`). Safari compiles the list into
+bytecode and applies it to every page itself; the extension never sees a
+page, and no site access is involved. Mapping:
+
+| Cosmetic data | Content blocker rule |
+| --- | --- |
+| generic selector (`##selector`, no exceptions) | `css-display-none`, trigger `url-filter: ".*"`; 100 selectors per rule, as in the CSS |
+| selector with `#@#` or `~a.com` exceptions | `css-display-none`, trigger `url-filter: ".*"` with `unless-domain: ["*a.com", …]`, exactly its excepting domains; selectors with the same domain set share a rule |
+| `$generichide`/`$elemhide` exception for a host | the host in the `if-domain` of one `ignore-previous-rules` rule, placed last |
+| `$generichide` exception with a path (`\|\|bing.com/search?`) | widened to the host: a domain condition cannot express a path. Four in the pinned lists. Hiding is off on all of that site rather than its search pages; nothing is hidden that a filter excepts |
+
+`*a.com` in a domain condition matches a.com and its subdomains (Apple's
+"Add * in front to match domain and subdomains"); `localhost` and IP
+addresses get no star. `ignore-previous-rules` cancels every rule before it
+in the same list, and this list holds nothing but hiding rules, so the one
+ignore rule needs no resource-type condition and cannot touch request
+blocking (which is the web extension's separate rule list). The exceptions
+are exact here, unlike Chrome's one shared file for excepted selectors: a
+content blocker rule costs nothing to add, so the "coarse exceptions"
+compromise above is Chrome-only.
+
+Counts for the v0.4 build: 410 rules for the same 13,636 selectors (134
+generic, 275 for the 300 excepted selectors in 275 domain sets, 1 ignore
+rule for 188 domains), 254 KB. WebKit rejects a whole list when one
+selector or trigger is invalid, so every selector goes through the same
+strict validator as the CSS (`npm run check --safari`), and
+`safari/check.swift` compiles the list with `WKContentRuleListStore`, the
+compiler Safari uses, before the project is built (Safari 16.4 added
+`:has()` to content blockers, the newest thing the validator admits).
+
+Like the Chrome CSS, the content blocker is not switched per site by the
+popup: it is a separate extension with its own on/off switch in Safari's
+settings, which is what the Safari popup's note points to.
+
+### Safari limits
+
+| Limit | Value | Source | Used |
+| --- | --- | --- | --- |
+| static rulesets | 50 | Safari 16 release notes | 2 |
+| enabled static rulesets | 10 | Safari 16 release notes | 2 |
+| static rules | not documented | Safari compiles DNR into content rule lists, so the content blocker limit below is the likely bound, counted per `requestDomains` entry rather than per merged rule: about 102,700 for these lists | 12,940 rules |
+| regex rules per ruleset | not documented | Chrome's 1,000 kept as the check | 4 and 5 |
+| content blocker rules per list | 50,000 (Safari 15 and later: 150,000, from memory, unverified) | not in any Apple page reachable here; the lower figure is enforced | 410 |
+| dynamic rules | not documented (`MAX_NUMBER_OF_DYNAMIC_AND_SESSION_RULES` exists since 16.4) | Safari 16.4 release notes | 2 per site switched off |
+
+### Packaging
+
+Safari runs extensions only from an app. `safari/package.sh` (macOS,
+Xcode) compiles the content blocker and the regex rules with WebKit
+(`safari/check.swift`), runs `xcrun safari-web-extension-packager` (or the
+older `safari-web-extension-converter`) on `dist-safari/extension` with
+`--copy-resources`, `--macos-only`, `--swift` and the placeholder bundle
+identifier `com.example.add-block`, and, once the content blocker target
+exists, replaces its `blockerList.json` with ours. Adding that target is
+the one thing Xcode will not do from a script: File → New → Target →
+Content Blocker Extension, named `add-block Hiding`; the README has the
+numbered steps, with signing ("Sign to Run Locally") and Safari's
+"Allow unsigned extensions" from Apple's "Running your Safari web
+extension". On later runs the script copies the current extension files
+into the project instead of creating it again, so a list update is
+`git pull`, `safari/package.sh`, Product → Build.
+
+### Unverified until it runs in Safari
+
+The build environment has no macOS, so these rest on documentation and
+the owner's one test; the first run on the Mac should look at each:
+
+- The web extension asks for no website access (no content scripts) and
+  the content blocker appears as "add-block Hiding" with no prompt.
+- `domains`/`excludedDomains` are honoured (a `$domain=` rule blocks on
+  its site and nowhere else), and the switch's `allow` rule with
+  `domains` turns blocking off for one site only.
+- The content blocker hides the same elements as the Chrome CSS, and
+  hides nothing on a `$generichide` site (github.com is one) or for an
+  excepted selector on its domain.
+- `safari/check.swift` passes, in particular the expanded regexes and the
+  `^`/`$` anchors and `\/` escapes they keep.
+- The `isUrlFilterCaseSensitive` default (16.4 says `false`) and what a
+  rule without `resourceTypes` matches (Chrome: everything but
+  `main_frame`; Safari undocumented).
+- The actual rule limits; the content blocker is far below either figure.
