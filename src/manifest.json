@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "add-block",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Personal ad and tracker blocker. Bundled EasyList and EasyPrivacy rules: network blocking plus CSS-only element hiding, with a per-site switch.",
   "minimum_chrome_version": "118",
   "icons": {

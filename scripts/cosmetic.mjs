@@ -10,14 +10,15 @@
 //   @@||a.com^$generichide -> a.com is added to exclude_matches of both files
 //   @@||a.com^$elemhide       (a path prefix such as ||a.com/search? works too)
 //
-// Site-specific filters (a.com,b.com##selector) are not shipped. CSS cannot
-// select on the page's host, so each distinct domain set would need its own
-// content_scripts entry with its own match patterns: 5,400 entries for
-// EasyList. Chrome's cost grows with the number of entries, and at that size
-// installing the extension took 36 s and opening chrome://extensions 45 s in
-// Chromium 153 (1,000 entries: 9 s). Making that work needs JavaScript in
-// pages, which DESIGN.md rules out. They are counted and listed by domain in
-// build-report.json.
+// Site-specific filters (a.com,b.com##selector) are not shipped as CSS. CSS
+// cannot select on the page's host, so each distinct domain set would need
+// its own content_scripts entry with its own match patterns: 5,400 entries
+// for EasyList. Chrome's cost grows with the number of entries, and at that
+// size installing the extension took 36 s and opening chrome://extensions
+// 45 s in Chromium 153 (1,000 entries: 9 s). Making that work needs
+// JavaScript in pages, which DESIGN.md rules out. They are counted in
+// build-report.json, and handed to the Safari content blocker (details
+// below), whose if-domain trigger is exactly that condition.
 //
 // Generic selectors with #@# exceptions all share one file that is excluded
 // on the union of their excepting domains, instead of one file per distinct
@@ -101,7 +102,8 @@ function stylesheet(selectors) {
 // filters: [{ line, filter }] where filter is an adblockpluscore Filter of
 // type elemhide, elemhideexception, elemhideemulation, snippet or invalid,
 // or an allowing filter with $generichide/$elemhide. Returns the CSS files,
-// the content_scripts entries and statistics.
+// the content_scripts entries, the details the Safari build needs, and
+// statistics.
 export function buildCosmetic(filters) {
   const stats = { filters: 0, used: 0, skipped: 0, skippedByReason: new Map() };
   const skip = (reason, line) => {
@@ -113,8 +115,10 @@ export function buildCosmetic(filters) {
   };
 
   const generic = []; // { line, selector, exclude: [domains] }
+  const specific = []; // { line, selector, include: [domains], wildcardDropped }
   const exceptions = new Map(); // selector -> Set of domains ("" = everywhere)
   const hidingExcludes = new Set(); // match patterns from $generichide/$elemhide
+  const elemhideExcludes = new Set(); // the $elemhide ones among them
   const specificDomains = new Set();
   let wildcardDomainsDropped = 0;
 
@@ -124,8 +128,11 @@ export function buildCosmetic(filters) {
       case "elemhide": {
         const { include, exclude, dropped } = splitDomains(filter.domains);
         if (include.length || dropped) {
+          // Not CSS (Chrome): see the file comment. The Safari content
+          // blocker takes them (below, after the exceptions are known).
           include.forEach((domain) => specificDomains.add(domain));
-          skip("site-specific filter (needs one content script per domain set, see DESIGN.md)", line);
+          specific.push({ line, selector: filter.selector, include, exclude, wildcardDropped: dropped });
+          skip("site-specific filter (Chrome: needs one content script per domain set, see DESIGN.md; Safari: in the content blocker)", line);
           break;
         }
         const problem = selectorProblem(filter.selector);
@@ -160,6 +167,7 @@ export function buildCosmetic(filters) {
           break;
         }
         patterns.forEach((pattern) => hidingExcludes.add(pattern));
+        if (options.some((o) => o === "elemhide" || o === "ehide")) patterns.forEach((pattern) => elemhideExcludes.add(pattern));
         stats.used++;
         break;
       }
@@ -182,9 +190,58 @@ export function buildCosmetic(filters) {
       all.push(selector);
       continue;
     }
-    excepted.push(selector);
-    for (const domain of [...exclude, ...domains]) exceptedDomains.add(domain);
+    const exceptedOn = [...new Set([...exclude, ...domains])].sort();
+    excepted.push({ selector, domains: exceptedOn });
+    for (const domain of exceptedOn) exceptedDomains.add(domain);
   }
+
+  // Site-specific filters for the Safari content blocker: the selector on
+  // its domains minus the domains (and their subdomains) that except it.
+  // Counted apart from the CSS statistics above.
+  const specificStats = { filters: specific.length, used: 0, skipped: 0, skippedByReason: new Map(), wildcardDomainsDropped: 0 };
+  const skipSpecific = (reason, line) => {
+    specificStats.skipped++;
+    const entry = specificStats.skippedByReason.get(reason) ?? { count: 0, examples: [] };
+    entry.count++;
+    if (entry.examples.length < EXAMPLES_PER_REASON) entry.examples.push(line);
+    specificStats.skippedByReason.set(reason, entry);
+  };
+  const specificOut = [];
+  const isOrUnder = (domain, parent) => domain === parent || domain.endsWith(`.${parent}`);
+  for (const { line, selector, include, exclude, wildcardDropped } of specific) {
+    specificStats.wildcardDomainsDropped += wildcardDropped;
+    const excepting = exceptions.get(selector) ?? new Set();
+    if (excepting.has("")) {
+      skipSpecific("removed by a generic #@# exception", line);
+      continue;
+    }
+    if (exclude.length) {
+      skipSpecific("includes and excludes domains (a content blocker trigger has one domain condition)", line);
+      continue;
+    }
+    if ([...excepting].some((e) => include.some((d) => isOrUnder(e, d) && e !== d))) {
+      skipSpecific("excepted on a subdomain of an included domain (cannot be expressed)", line);
+      continue;
+    }
+    const domains = include.filter((d) => ![...excepting].some((e) => isOrUnder(d, e))).sort();
+    if (domains.length === 0) {
+      skipSpecific(
+        include.length === 0 ? "no domain a domain condition can express (example.* or a single label)" : "every domain excepted by #@#",
+        line,
+      );
+      continue;
+    }
+    const problem = selectorProblem(selector);
+    if (problem) {
+      skipSpecific(`selector not accepted by the validator: ${problem.replace(/ at offset \d+$/, "")}`, line);
+      continue;
+    }
+    specificStats.used++;
+    specificOut.push({ selector, domains });
+  }
+  specificStats.skippedByReason = Object.fromEntries(
+    [...specificStats.skippedByReason.entries()].sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0])),
+  );
 
   const files = new Map();
   const contentScripts = [];
@@ -202,12 +259,21 @@ export function buildCosmetic(filters) {
     });
   };
   entry(GENERIC_FILE, all, hiding);
-  entry(EXCEPTED_FILE, excepted, [...hiding, ...[...exceptedDomains].map(matchPattern)]);
+  entry(
+    EXCEPTED_FILE,
+    excepted.map(({ selector }) => selector),
+    [...hiding, ...[...exceptedDomains].map(matchPattern)],
+  );
 
   const cssBytes = [...files.values()].reduce((n, css) => n + Buffer.byteLength(css), 0);
   return {
     files,
     contentScripts,
+    // What the Safari content blocker is built from (scripts/safari.mjs):
+    // the generic selectors, the excepted ones with their exact domain sets,
+    // the site-specific selectors with their domains, the $generichide and
+    // $elemhide match patterns (all of them, and the $elemhide ones).
+    details: { generic: all, excepted, specific: specificOut, specificStats, hidingExcludes: hiding, elemhideExcludes: [...elemhideExcludes] },
     stats: {
       filters: stats.filters,
       used: stats.used,

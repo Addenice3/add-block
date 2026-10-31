@@ -9,8 +9,9 @@
   "scripts": {
     "update-lists": "node scripts/update-lists.mjs",
     "build": "node scripts/build.mjs",
-    "check": "node scripts/check.mjs",
-    "test": "node --test test/extension.test.mjs",
+    "check": "node scripts/check.mjs && node scripts/check.mjs --safari",
+    "test": "node --test test/safari.test.mjs test/extension.test.mjs",
+    "test:safari": "node --test test/safari.test.mjs",
     "icons": "node scripts/icons.mjs"
   },
   "devDependencies": {

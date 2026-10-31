@@ -8,7 +8,11 @@
 //   the popup reads them back instead of keeping its own list;
 // - the blocked count: getMatchedRules for the current tab, which activeTab
 //   also allows (otherwise it needs declarativeNetRequestFeedback, whose
-//   warning is "Read your browsing history").
+//   warning is "Read your browsing history"). The Safari popup page has no
+//   count row, and this script then never asks.
+// The script holds no URL. The one page it can open, the extension's own
+// details page in the browser's settings, is named by the page's "site
+// access" link, which the Safari popup page does not have.
 "use strict";
 
 const dnr = chrome.declarativeNetRequest;
@@ -19,10 +23,6 @@ const dnr = chrome.declarativeNetRequest;
 const FIRST_ALLOW_RULE_ID = 1000000;
 // Above every static rule's priority (2010 at most), so the switch wins.
 const SWITCH_PRIORITY = 1000000;
-// This extension's details page in Chrome, with its site access setting.
-// Opened in a tab; never loaded here.
-const SITE_SETTINGS = "chrome://extensions/?id=" + chrome.runtime.id;
-
 const $ = (id) => document.getElementById(id);
 const siteText = $("site");
 const siteLabel = $("site-label");
@@ -31,6 +31,7 @@ const countRow = $("count-row");
 const countText = $("count");
 const note = $("note");
 const offNote = $("off-note");
+const siteSettings = $("site-settings");
 
 // The site a tab belongs to: its host without a leading "www.". A switch
 // rule on that host also covers its subdomains.
@@ -99,6 +100,7 @@ async function blockedCount(tabId) {
 }
 
 async function showCount(tabId) {
+  if (!countRow) return;
   countRow.hidden = false;
   try {
     if (typeof dnr.getMatchedRules !== "function") throw new Error("not supported by this browser");
@@ -138,7 +140,7 @@ async function main() {
       await setBlocking(site, toggle.checked);
       showState(toggle.checked);
       note.textContent = "Reloading the page…";
-      countText.textContent = "–";
+      if (countText) countText.textContent = "–";
       await chrome.tabs.reload(tab.id);
     } catch (error) {
       note.textContent = `Could not change the setting: ${error.message}`;
@@ -154,7 +156,9 @@ async function main() {
     }
   });
 
-  $("site-settings").addEventListener("click", () => chrome.tabs.create({ url: SITE_SETTINGS }));
+  // Opens the browser's details page for this extension in a tab (its URL
+  // is the link's data-url plus the extension id); never loaded here.
+  siteSettings?.addEventListener("click", () => chrome.tabs.create({ url: siteSettings.dataset.url + chrome.runtime.id }));
 }
 
 main().catch((error) => {
