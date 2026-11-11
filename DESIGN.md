@@ -145,6 +145,15 @@ install words it "Read and change all your data on all websites").
   URLs that never change. easylist.to was also unreachable from the
   environment where this pipeline was first set up. `canonicalUrl` in the
   lock file still records the easylist.to address for reference.
+- **Automatic refresh.** `.github/workflows/refresh-lists.yml` runs
+  `update-lists`, `build`, `check` and `test` weekly and on demand, and
+  opens (or updates) a single pull request when the list content changed
+  and everything passed. It moves the pins only through `update-lists` and
+  only by pull request, never on `main` and never by merging. It needs no
+  secrets: the job that runs project code has a read-only token; a separate
+  job with `contents: write` and `pull-requests: write` applies the build's
+  patch, limited to `lists.lock.json`, `build-report.json`, `dist/` and
+  `dist-safari/`. Third-party actions are pinned to commit SHAs.
 - **Risk.** If EasyList ever rewrites the gh-pages history, an old pinned
   commit could disappear. The build then fails loudly rather than producing
   different output. Run `update-lists` again, or commit the raw lists if that
@@ -188,6 +197,8 @@ install words it "Read and change all your data on all websites").
 
 ```
 npm run update-lists   resolve the newest gh-pages commit, download, write lists.lock.json
+                         (weekly in .github/workflows/refresh-lists.yml, which then runs
+                         build, check and test and opens one pull request)
 npm run build          for each pinned list:
                          fetch pinned bytes (cache or download) and verify SHA-256
                          convert each network filter with abp2dnr

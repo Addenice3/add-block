@@ -259,10 +259,62 @@ npm run build && npm run check && npm test
 Commit `lists.lock.json`, `dist/`, `dist-safari/` and `build-report.json`
 together.
 
+### Automatic list refresh
+
+A GitHub Actions workflow, `.github/workflows/refresh-lists.yml`, does the
+steps above for you every Monday at 04:17 UTC:
+
+1. Pins the newest lists from the official EasyList GitHub mirror
+   (`npm run update-lists`), rebuilds `dist/` and `dist-safari/`
+   (`npm run build`), then runs `npm run check` and `npm test` (the Safari
+   suite and the Chromium suite).
+2. If the list content changed and everything passed, it pushes one commit
+   to the branch `automation/refresh-lists` and opens a pull request into
+   `main`, or updates the open one: there is never more than one. The pull
+   request lists the versions old → new, rule counts and dropped filters
+   compared with `main`, headroom under each Chrome and Safari limit, and the
+   Safari content blocker's rule count. The same text appears in the run's
+   summary.
+3. If anything fails, it opens no pull request and the run fails; GitHub
+   emails the failure (for a scheduled workflow, to whoever last changed its
+   schedule).
+
+It never merges. Review the pull request (the `build-report.json` diff shows
+every dropped filter), try the build, and merge it yourself. It uses no
+secrets and no AI, only the built-in `GITHUB_TOKEN`: the job that downloads
+and builds can only read the repository; a second job, which runs no project
+code, gets `contents: write` and `pull-requests: write` to push the branch
+and open the pull request. It changes nothing in the extension itself. It
+does not rewrite the "Current build" numbers below; the pull request carries
+the new ones.
+
+**Switch this on once, or the workflow cannot open pull requests:** on
+GitHub, open the repository's **Settings** → **Actions** → **General**,
+scroll to **Workflow permissions**, tick **Allow GitHub Actions to create
+and approve pull requests**, and click **Save**. The radio buttons above it
+can stay on **Read repository contents and packages permissions**; the
+workflow asks for the two write permissions it needs itself. (In an
+organization, the same box must first be allowed under the organization's
+**Settings** → **Actions** → **General**.)
+
+To run it now: **Actions** tab → **refresh-lists** in the left column →
+**Run workflow** → keep branch `main` → **Run workflow**. Or, with the GitHub
+CLI:
+
+```sh
+gh workflow run refresh-lists.yml
+```
+
+Two GitHub rules to know: a pull request opened with `GITHUB_TOKEN` does not
+start other workflows (this repository has none), and GitHub pauses
+scheduled workflows in a public repository after 60 days without activity;
+the Actions tab then offers to turn it back on.
+
 ## Current build
 
 Lists pinned at version 202610270115 (27 Oct 2026). Details are in
-`build-report.json`.
+`build-report.json`. Refresh pull requests do not update this section;
+their description has the numbers for the new lists.
 
 | List | Filters | Converted | Cosmetic | Dropped | Rules (Chrome) | Regex rules |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -306,7 +358,8 @@ dist/                built Chrome extension (committed); load this folder
 dist-safari/         built Safari extension (extension/) and content blocker (content-blocker/blockerList.json), committed
 safari/              package.sh (runs on the owner's Mac) and check.swift (WebKit compile check)
 icons/               add-block.svg (icon source) and the 512 px PNG for stores
-scripts/             update-lists, build (with cosmetic, merge, selector, safari), check, icons
+scripts/             update-lists, build (with cosmetic, merge, selector, safari), check, icons, refresh-summary
+.github/workflows/   refresh-lists.yml: weekly list refresh pull request (see "Automatic list refresh")
 test/                safari.test.mjs (no browser) and extension.test.mjs (Playwright, Chromium)
 lists.lock.json      pinned list versions: URL, commit, date, SHA-256
 build-report.json    rule counts and dropped filters by reason, Chrome and Safari

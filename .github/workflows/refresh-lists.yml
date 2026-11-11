@@ -1,0 +1,172 @@
+# Keeps the bundled filter lists current. Weekly, and on demand from the
+# Actions tab: pin the newest EasyList and EasyPrivacy from the official
+# GitHub mirror (npm run update-lists), rebuild dist/ and dist-safari/, run
+# npm run check and npm test (Safari suite and Chromium suite). If the lists
+# changed and everything passed, open the refresh pull request, or update it
+# if one is already open. If anything fails, no pull request is opened and
+# the run fails, so GitHub notifies the owner.
+#
+# Two jobs, so the code that downloads lists and runs npm packages and a
+# browser never holds a token that can write: "build" reads only; "pull-request"
+# gets write access, runs no project code, and commits only the build's patch
+# to lists.lock.json, build-report.json, dist/ and dist-safari/.
+#
+# The repository setting "Allow GitHub Actions to create and approve pull
+# requests" must be on (README, "Automatic list refresh").
+name: refresh-lists
+
+on:
+  schedule:
+    - cron: "17 4 * * 1" # Mondays 04:17 UTC
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: refresh-lists
+  cancel-in-progress: false
+
+env:
+  REFRESH_BRANCH: automation/refresh-lists
+
+jobs:
+  build:
+    name: Re-pin, build, check, test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.lists.outputs.changed }}
+      base: ${{ steps.base.outputs.sha }}
+    steps:
+      - name: Check out the default branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Record the base commit
+        id: base
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Node.js version (the runner's own; package.json needs 20 or newer)
+        run: |
+          node --version
+          npm --version
+          node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 20 ? 0 : 1)'
+
+      - name: Install the pinned build and test tools
+        run: npm ci
+
+      - name: Install Playwright's Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Pin the newest lists
+        run: npm run update-lists
+
+      - name: Did the list content change?
+        id: lists
+        run: |
+          changed=$(node scripts/refresh-summary.mjs --changed)
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+          echo "Lists changed: $changed"
+
+      - name: Build Chrome and Safari output
+        run: npm run build
+
+      - name: npm run check
+        run: npm run check
+
+      - name: npm test (Safari suite, then Chromium suite)
+        run: npm test
+
+      - name: Only the expected files changed
+        run: |
+          unexpected=$(git status --porcelain --untracked-files=all -- . \
+            ':!lists.lock.json' ':!build-report.json' ':!dist' ':!dist-safari')
+          if [ -n "$unexpected" ]; then
+            echo "::error::The refresh changed files outside the build output:"
+            echo "$unexpected"
+            exit 1
+          fi
+
+      - name: Write the patch and the pull request body
+        if: steps.lists.outputs.changed == 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/refresh"
+          git add --all -- lists.lock.json build-report.json dist dist-safari
+          git diff --cached --binary > "$RUNNER_TEMP/refresh/changes.patch"
+          node scripts/refresh-summary.mjs > "$RUNNER_TEMP/refresh/body.md"
+          jq -r '[.lists[] | "\(.title) \(.version)"] | "Refresh filter lists: " + join(", ")' \
+            lists.lock.json > "$RUNNER_TEMP/refresh/title.txt"
+          cat "$RUNNER_TEMP/refresh/body.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Hand them to the pull-request job
+        if: steps.lists.outputs.changed == 'true'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: refresh
+          path: ${{ runner.temp }}/refresh/
+          if-no-files-found: error
+          retention-days: 7
+
+  pull-request:
+    name: Open or update the refresh pull request
+    needs: build
+    if: needs.build.outputs.changed == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # push the refresh branch
+      pull-requests: write # open or edit the pull request
+    steps:
+      - name: Check out the commit the build started from
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.build.outputs.base }}
+
+      - name: Fetch the patch
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: refresh
+          path: ${{ runner.temp }}/refresh
+
+      - name: Commit and push the refresh branch
+        env:
+          BASE_SHA: ${{ needs.build.outputs.base }}
+        run: |
+          git apply --index "$RUNNER_TEMP/refresh/changes.patch"
+          unexpected=$(git diff --cached --name-only |
+            grep -vE '^(lists\.lock\.json|build-report\.json|dist/|dist-safari/)' || true)
+          if [ -n "$unexpected" ]; then
+            echo "::error::The patch touches files outside the build output:"
+            echo "$unexpected"
+            exit 1
+          fi
+          git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit --quiet --file - <<MSG
+          $(cat "$RUNNER_TEMP/refresh/title.txt")
+
+          Pinned by npm run update-lists, rebuilt by npm run build; npm run check
+          and npm test passed. Based on $BASE_SHA.
+          MSG
+          git push --force origin "HEAD:refs/heads/$REFRESH_BRANCH"
+
+      - name: Open the pull request, or update the open one
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          BASE: ${{ github.event.repository.default_branch }}
+        run: |
+          title=$(cat "$RUNNER_TEMP/refresh/title.txt")
+          body="$RUNNER_TEMP/refresh/body.md"
+          number=$(gh api "repos/$REPO/pulls?state=open&base=$BASE&head=$OWNER:$REFRESH_BRANCH" --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh api --method PATCH "repos/$REPO/pulls/$number" -f title="$title" -F body=@"$body" --jq .html_url
+          else
+            gh api --method POST "repos/$REPO/pulls" -f head="$REFRESH_BRANCH" -f base="$BASE" \
+              -f title="$title" -F body=@"$body" --jq .html_url
+          fi
