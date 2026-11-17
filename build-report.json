@@ -4,21 +4,21 @@
     {
       "id": "easylist",
       "title": "EasyList",
-      "version": "202610270115",
-      "sha256": "f9ecff1c78836acc5a5bcab6c018dfdde9002555ce3823716f3212bf6347ada0",
+      "version": "202611171037",
+      "sha256": "d08d9b61d12bf31d7dac590f4943d673d025d399687a0bbb1b1aab520c37450a",
       "rulesetPath": "rulesets/easylist.json",
-      "filters": 74796,
-      "comments": 275,
-      "convertedFilters": 46357,
-      "cosmeticFilters": 24878,
-      "droppedFilters": 3561,
-      "duplicateRules": 8,
-      "rulesBeforeMerge": 46349,
-      "rules": 3824,
-      "regexRules": 4,
+      "filters": 77174,
+      "comments": 277,
+      "convertedFilters": 48678,
+      "cosmeticFilters": 24940,
+      "droppedFilters": 3556,
+      "duplicateRules": 9,
+      "rulesBeforeMerge": 48669,
+      "rules": 3851,
+      "regexRules": 5,
       "droppedByReason": {
         "$popup has no declarativeNetRequest equivalent": {
-          "count": 2969,
+          "count": 2976,
           "examples": [
             "&adb=y&adb=y^$popup",
             "&cbiframe=$popup",
@@ -26,7 +26,7 @@
           ]
         },
         "$document page block (abp2dnr does not convert it)": {
-          "count": 569,
+          "count": 556,
           "examples": [
             ".com/smartpop/$document",
             "/?usid=*&utid=$document",
@@ -50,8 +50,9 @@
           ]
         },
         "modifyHeaders action needs host permissions": {
-          "count": 2,
+          "count": 3,
           "examples": [
+            "$csp=script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.filecrypt.to/js/prototype.js https://static.filecrypt.to/js/container.js https://static.filecrypt.to/js/container_utils.js https://static.filecrypt.to/js/scriptaculous/ https://static.filecrypt.to/js/container/ https://*.cutcaptcha.net https://challenges.cloudflare.com http://127.0.0.1:9666 http://cnl.filecrypt.cc:9666; connect-src 'self' https://*.cutcaptcha.net; worker-src 'self' blob:,domain=filecrypt.cc|filecrypt.co|filecrypt.to,~third-party",
             "$csp=script-src 'self' data: 'unsafe-inline' 'unsafe-hashes' 'unsafe-eval',domain=thumbs.pro",
             "||thegay.com^$csp=default-src 'self' *.ahcdn.com fonts.gstatic.com fonts.googleapis.com https://thegay.com https://tn.thegay.com 'unsafe-inline' 'unsafe-eval' data: blob:"
           ]
@@ -61,17 +62,17 @@
     {
       "id": "easyprivacy",
       "title": "EasyPrivacy",
-      "version": "202610270115",
-      "sha256": "22d9e7acf1869964e3b44cec8fd628fe4dc90b76ea285ffc29fb152612873217",
+      "version": "202611171037",
+      "sha256": "a89b906ccefcbfceabac7f1b5ff2f670c1e634f2e34f9f5ba7740d3c1f136313",
       "rulesetPath": "rulesets/easyprivacy.json",
-      "filters": 56415,
-      "comments": 772,
-      "convertedFilters": 56338,
+      "filters": 56683,
+      "comments": 771,
+      "convertedFilters": 56606,
       "cosmeticFilters": 37,
       "droppedFilters": 40,
-      "duplicateRules": 2,
-      "rulesBeforeMerge": 56336,
-      "rules": 9119,
+      "duplicateRules": 3,
+      "rulesBeforeMerge": 56603,
+      "rules": 9218,
       "regexRules": 6,
       "droppedByReason": {
         "unsupported option $redirect": {
@@ -131,21 +132,21 @@
     }
   ],
   "cosmetic": {
-    "filters": 24915,
-    "used": 14136,
-    "skipped": 10779,
-    "genericSelectors": 13636,
-    "genericSelectorsWithExceptions": 300,
-    "exceptionDomains": 475,
+    "filters": 24977,
+    "used": 14141,
+    "skipped": 10836,
+    "genericSelectors": 13638,
+    "genericSelectorsWithExceptions": 303,
+    "exceptionDomains": 481,
     "hidingExceptionPatterns": 189,
     "wildcardExceptionDomainsDropped": 0,
-    "specificFilterDomains": 7936,
+    "specificFilterDomains": 7967,
     "files": 2,
     "contentScripts": 2,
-    "cssBytes": 224458,
+    "cssBytes": 224536,
     "skippedByReason": {
       "site-specific filter (Chrome: needs one content script per domain set, see DESIGN.md; Safari: in the content blocker)": {
-        "count": 10447,
+        "count": 10503,
         "examples": [
           "advfn.com###APS_300_X_600",
           "advfn.com###APS_BILLBOARD",
@@ -153,7 +154,7 @@
         ]
       },
       "extended selector (#?#, :-abp-has and the like) needs JavaScript": {
-        "count": 291,
+        "count": 292,
         "examples": [
           "discord.com#?#.wrapper__0d616:has-text(Get Reward)",
           "gamedev.net#?#.dark\\:border-gray-700:has-text(Advertisement)",
@@ -184,15 +185,15 @@
     "rulesets": [
       {
         "id": "easylist",
-        "chromeRules": 3824,
-        "rules": 3822,
+        "chromeRules": 3851,
+        "rules": 3848,
         "regexRules": 4,
-        "unchanged": 3265,
-        "changed": 557,
-        "dropped": 2,
+        "unchanged": 3290,
+        "changed": 558,
+        "dropped": 3,
         "changesByReason": {
           "initiatorDomains renamed to domains (the name in Apple's Safari release notes)": {
-            "count": 389,
+            "count": 391,
             "examples": [
               1436,
               1437,
@@ -200,7 +201,7 @@
             ]
           },
           "resourceTypes without csp_report, object, webbundle (not resource types in Safari)": {
-            "count": 97,
+            "count": 96,
             "examples": [
               3,
               8,
@@ -228,7 +229,7 @@
             "examples": [
               13,
               156,
-              1274
+              1273
             ]
           },
           "dropped: only matches object, not resource types in Safari": {
@@ -241,78 +242,84 @@
           "regexFilter counted quantifiers expanded (not in Safari's documented regex syntax)": {
             "count": 2,
             "examples": [
-              2713,
-              2755
+              2731,
+              2773
             ]
           },
           "resourceTypes without csp_report (not resource types in Safari)": {
             "count": 2,
             "examples": [
-              949,
-              950
+              948,
+              949
+            ]
+          },
+          "dropped: regexFilter uses alternation, outside Safari's documented regex syntax": {
+            "count": 1,
+            "examples": [
+              1281
             ]
           },
           "resourceTypes without object (not resource types in Safari)": {
             "count": 1,
             "examples": [
-              1275
+              1274
             ]
           }
         }
       },
       {
         "id": "easyprivacy",
-        "chromeRules": 9119,
-        "rules": 9118,
+        "chromeRules": 9218,
+        "rules": 9217,
         "regexRules": 5,
-        "unchanged": 8454,
-        "changed": 664,
+        "unchanged": 8551,
+        "changed": 666,
         "dropped": 1,
         "changesByReason": {
           "initiatorDomains renamed to domains (the name in Apple's Safari release notes)": {
-            "count": 566,
+            "count": 568,
             "examples": [
-              3482,
-              3493,
-              3499
+              3529,
+              3541,
+              3547
             ]
           },
           "excludedInitiatorDomains renamed to excludedDomains (the name in Apple's Safari release notes)": {
             "count": 75,
             "examples": [
-              8,
-              162,
-              275
+              9,
+              168,
+              282
             ]
           },
           "resourceTypes without csp_report, object, webbundle (not resource types in Safari)": {
             "count": 23,
             "examples": [
-              1277,
-              1704,
-              2267
+              1297,
+              1727,
+              2297
             ]
           },
           "regexFilter counted quantifiers expanded (not in Safari's documented regex syntax)": {
             "count": 5,
             "examples": [
-              7212,
-              7213,
-              7214
+              7300,
+              7301,
+              7302
             ]
           },
           "resourceTypes without csp_report (not resource types in Safari)": {
             "count": 3,
             "examples": [
-              3066,
-              3067,
-              3068
+              3113,
+              3114,
+              3115
             ]
           },
           "dropped: regexFilter uses alternation, outside Safari's documented regex syntax": {
             "count": 1,
             "examples": [
-              7215
+              7303
             ]
           }
         }
@@ -327,15 +334,15 @@
       "js": "initiatorDomains renamed to domains in the switch rule"
     },
     "contentBlockerStats": {
-      "rules": 5815,
-      "selectors": 23801,
-      "genericSelectors": 13636,
+      "rules": 5847,
+      "selectors": 23852,
+      "genericSelectors": 13638,
       "genericRules": 134,
-      "exceptionGroups": 275,
-      "exceptionRules": 275,
-      "specificSelectors": 10165,
-      "specificGroups": 5405,
-      "specificRules": 5405,
+      "exceptionGroups": 278,
+      "exceptionRules": 278,
+      "specificSelectors": 10214,
+      "specificGroups": 5434,
+      "specificRules": 5434,
       "ignoreRules": 1,
       "hidingOffDomains": 188,
       "elemhideOffDomains": 0,
@@ -357,14 +364,14 @@
           "host": "yandex.com"
         }
       ],
-      "bytes": 1211164,
+      "bytes": 1215070,
       "specificFilters": {
-        "filters": 10447,
-        "used": 10165,
-        "skipped": 282,
+        "filters": 10503,
+        "used": 10214,
+        "skipped": 289,
         "skippedByReason": {
           "no domain a domain condition can express (example.* or a single label)": {
-            "count": 236,
+            "count": 242,
             "examples": [
               "sgcarmart##.dealer_banner",
               "ticketmaster##.kOwduY",
@@ -404,8 +411,9 @@
             ]
           },
           "selector not accepted by the validator: selector contains {, }, /* or url(": {
-            "count": 2,
+            "count": 3,
             "examples": [
+              "filecrypt.cc,filecrypt.co,filecrypt.to##[style*=\"background:url(https://static.filecrypt.to/images/\"]",
               "ranker.com##+js(aost, HTMLElement.prototype.insertBefore, /[A-Z] .+chunks\\/\\d{4}\\./)",
               "ncbi.nlm.nih.gov##+js(set, ncbi.sg, {})"
             ]
@@ -417,7 +425,7 @@
             ]
           }
         },
-        "wildcardDomainsDropped": 337
+        "wildcardDomainsDropped": 343
       }
     }
   }
