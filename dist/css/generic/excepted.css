@@ -28,6 +28,7 @@
 #article_ad,
 #banner-ad,
 #centerads,
+#footer-ad,
 #footer-ads,
 #footer_ad,
 #fwdevpDiv0,
@@ -95,10 +96,11 @@
 .adLink,
 .adMiddle,
 .adResult,
-.adText,
-.adWrap,
-.ad__item
+.adSense,
+.adText
 {display:none!important}
+.adWrap,
+.ad__item,
 .ad_banner,
 .ad_bg,
 .ad_block,
@@ -133,6 +135,7 @@
 .ads-border,
 .ads-box-border,
 .ads-core-placer,
+.ads-desktop,
 .ads-header,
 .ads-image,
 .ads-inline,
@@ -195,11 +198,11 @@
 .boxAds,
 .box_ads,
 .c-ad,
-.c-ads,
+.c-ads
+{display:none!important}
 .cnx-player-wrapper,
 .column-ad,
-.connatix-wrapper
-{display:none!important}
+.connatix-wrapper,
 .container-ads,
 .contentAds,
 .content_ads,
@@ -296,7 +299,8 @@ ins.adsbygoogle[data-ad-slot],
 #mplayer-embed,
 .anyClipWrapper,
 .ez-video-wrap,
-.wps-player-wrap,
+.wps-player-wrap
+{display:none!important}
 a[href^="https://www.privateinternetaccess.com/"] > img,
 #outbrain_widget_0,
 #taboola-below-article-1
