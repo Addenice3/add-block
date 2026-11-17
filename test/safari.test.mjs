@@ -345,15 +345,23 @@ test("the Chrome output is not changed by the Safari build", async () => {
   }
   for (const [what, n] of Object.entries(chromeOnly)) assert.ok(n > 0, `Chrome rulesets still carry ${what}`);
 
-  // Against the base branch, when the checkout has it: rulesets and CSS are
-  // byte-identical (only manifest.json and the popup changed in this version).
+  // Against the base branch, when the checkout has it and pins the same list
+  // content: rulesets and CSS are byte-identical (only manifest.json and the
+  // popup changed in this version). A list refresh changes them by design.
+  const pinned = (lock) => JSON.stringify(lock.lists.map(({ id, sha256 }) => [id, sha256]));
+  const ownPins = pinned(await json("lists.lock.json"));
   for (const ref of ["origin/main", "main"]) {
     try {
       await run("git", ["rev-parse", "--verify", "--quiet", ref]);
     } catch {
       continue;
     }
-    await run("git", ["diff", "--quiet", ref, "--", "dist/rulesets", "dist/css", "lists.lock.json"]).catch((error) => {
+    const { stdout } = await run("git", ["show", `${ref}:lists.lock.json`]);
+    if (pinned(JSON.parse(stdout)) !== ownPins) {
+      console.log(`lists.lock.json pins other list content than ${ref}; dist/ comparison skipped`);
+      return;
+    }
+    await run("git", ["diff", "--quiet", ref, "--", "dist/rulesets", "dist/css"]).catch((error) => {
       assert.fail(`dist/rulesets or dist/css differ from ${ref}: ${error.stdout}${error.stderr}`);
     });
     console.log(`dist/rulesets and dist/css are byte-identical to ${ref}`);

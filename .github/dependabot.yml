@@ -1,0 +1,17 @@
+# Weekly pull requests that move the commit-SHA pins of the GitHub Actions in
+# .github/workflows/ to new releases (the "# vX.Y.Z" comment is updated with
+# the SHA). One grouped pull request per week; npm dependencies are not
+# covered here (package-lock.json pins them and is changed by hand).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: tuesday
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "Actions"

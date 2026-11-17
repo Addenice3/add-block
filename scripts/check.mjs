@@ -29,6 +29,7 @@ import {
   UnsupportedRegex,
   safariRegex,
 } from "./safari.mjs";
+import { CHROME_LIMITS } from "./limits.mjs";
 import { selectorProblem } from "./selector.mjs";
 
 const args = process.argv.slice(2);
@@ -37,13 +38,6 @@ const ROOT = args.find((arg) => !arg.startsWith("--")) ?? (SAFARI ? "dist-safari
 const DIST = SAFARI ? path.join(ROOT, SAFARI_EXTENSION_DIR) : ROOT;
 const BROWSER = SAFARI ? "Safari" : "Chrome";
 
-// Chrome limits, from the chrome.declarativeNetRequest API constants.
-const CHROME_LIMITS = {
-  GUARANTEED_MINIMUM_STATIC_RULES: 30_000,
-  MAX_NUMBER_OF_STATIC_RULESETS: 100,
-  MAX_NUMBER_OF_ENABLED_STATIC_RULESETS: 50,
-  MAX_NUMBER_OF_REGEX_RULES: 1_000,
-};
 const LIMITS = SAFARI ? SAFARI_LIMITS : CHROME_LIMITS;
 
 // Every manifest key and permission is an explicit decision. Adding one
