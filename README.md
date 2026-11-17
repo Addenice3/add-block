@@ -305,6 +305,12 @@ CLI:
 gh workflow run refresh-lists.yml
 ```
 
+The actions the workflow uses are pinned to commit SHAs;
+`.github/dependabot.yml` has Dependabot open one pull request a week
+(Tuesdays) when any of them has a new release. It needs no setting: GitHub
+reads the file once it is on `main`. Review and merge those like any other
+change.
+
 Two GitHub rules to know: a pull request opened with `GITHUB_TOKEN` does not
 start other workflows (this repository has none), and GitHub pauses
 scheduled workflows in a public repository after 60 days without activity;
@@ -360,6 +366,7 @@ safari/              package.sh (runs on the owner's Mac) and check.swift (WebKi
 icons/               add-block.svg (icon source) and the 512 px PNG for stores
 scripts/             update-lists, build (with cosmetic, merge, selector, safari), check, icons, refresh-summary
 .github/workflows/   refresh-lists.yml: weekly list refresh pull request (see "Automatic list refresh")
+.github/dependabot.yml  weekly pull request for new releases of the pinned actions
 test/                safari.test.mjs (no browser) and extension.test.mjs (Playwright, Chromium)
 lists.lock.json      pinned list versions: URL, commit, date, SHA-256
 build-report.json    rule counts and dropped filters by reason, Chrome and Safari

@@ -153,7 +153,8 @@ install words it "Read and change all your data on all websites").
   secrets: the job that runs project code has a read-only token; a separate
   job with `contents: write` and `pull-requests: write` applies the build's
   patch, limited to `lists.lock.json`, `build-report.json`, `dist/` and
-  `dist-safari/`. Third-party actions are pinned to commit SHAs.
+  `dist-safari/`. Third-party actions are pinned to commit SHAs;
+  Dependabot (`.github/dependabot.yml`) proposes new pins weekly.
 - **Risk.** If EasyList ever rewrites the gh-pages history, an old pinned
   commit could disappear. The build then fails loudly rather than producing
   different output. Run `update-lists` again, or commit the raw lists if that
