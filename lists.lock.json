@@ -4,28 +4,28 @@
     {
       "id": "easylist",
       "title": "EasyList",
-      "version": "202611171037",
-      "lastModified": "17 Nov 2026 10:37 UTC",
+      "version": "202611231442",
+      "lastModified": "23 Nov 2026 14:42 UTC",
       "canonicalUrl": "https://easylist.to/easylist/easylist.txt",
-      "sourceUrl": "https://raw.githubusercontent.com/easylist/easylist/a85a51ffbacd6ca7fc650aaf6bdcec5bd4cb8349/easylist.txt",
+      "sourceUrl": "https://raw.githubusercontent.com/easylist/easylist/b25342758c5951b43068740642c11c722183b282/easylist.txt",
       "source": "Official EasyList GitHub repository (github.com/easylist/easylist), gh-pages branch, which holds the published lists. Pinned to a commit so the URL is immutable. Used instead of easylist.to, which has no versioned URLs and was unreachable from the build environment when this pipeline was set up.",
-      "mirrorCommit": "a85a51ffbacd6ca7fc650aaf6bdcec5bd4cb8349",
-      "fetchedAt": "2026-11-17",
-      "bytes": 2042031,
-      "sha256": "d08d9b61d12bf31d7dac590f4943d673d025d399687a0bbb1b1aab520c37450a"
+      "mirrorCommit": "b25342758c5951b43068740642c11c722183b282",
+      "fetchedAt": "2026-11-23",
+      "bytes": 2053158,
+      "sha256": "b0ebbe796761b5fa9995e3a12e18cd63a1ef6d9d53ad1bbcd05f3cf7478399de"
     },
     {
       "id": "easyprivacy",
       "title": "EasyPrivacy",
-      "version": "202611171037",
-      "lastModified": "17 Nov 2026 10:37 UTC",
+      "version": "202611231442",
+      "lastModified": "23 Nov 2026 14:42 UTC",
       "canonicalUrl": "https://easylist.to/easylist/easyprivacy.txt",
-      "sourceUrl": "https://raw.githubusercontent.com/easylist/easylist/a85a51ffbacd6ca7fc650aaf6bdcec5bd4cb8349/easyprivacy.txt",
+      "sourceUrl": "https://raw.githubusercontent.com/easylist/easylist/b25342758c5951b43068740642c11c722183b282/easyprivacy.txt",
       "source": "Official EasyList GitHub repository (github.com/easylist/easylist), gh-pages branch, which holds the published lists. Pinned to a commit so the URL is immutable. Used instead of easylist.to, which has no versioned URLs and was unreachable from the build environment when this pipeline was set up.",
-      "mirrorCommit": "a85a51ffbacd6ca7fc650aaf6bdcec5bd4cb8349",
-      "fetchedAt": "2026-11-17",
-      "bytes": 1517813,
-      "sha256": "a89b906ccefcbfceabac7f1b5ff2f670c1e634f2e34f9f5ba7740d3c1f136313"
+      "mirrorCommit": "b25342758c5951b43068740642c11c722183b282",
+      "fetchedAt": "2026-11-23",
+      "bytes": 1521678,
+      "sha256": "48dc8438d1f932b6fdeee52da83e05e6c6c5d0ab25d5aeb8f3b25b2a49b37672"
     }
   ]
 }
