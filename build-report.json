@@ -4,17 +4,17 @@
     {
       "id": "easylist",
       "title": "EasyList",
-      "version": "202611171037",
-      "sha256": "d08d9b61d12bf31d7dac590f4943d673d025d399687a0bbb1b1aab520c37450a",
+      "version": "202611231442",
+      "sha256": "b0ebbe796761b5fa9995e3a12e18cd63a1ef6d9d53ad1bbcd05f3cf7478399de",
       "rulesetPath": "rulesets/easylist.json",
-      "filters": 77174,
+      "filters": 77647,
       "comments": 277,
-      "convertedFilters": 48678,
-      "cosmeticFilters": 24940,
-      "droppedFilters": 3556,
-      "duplicateRules": 9,
-      "rulesBeforeMerge": 48669,
-      "rules": 3851,
+      "convertedFilters": 49090,
+      "cosmeticFilters": 25003,
+      "droppedFilters": 3554,
+      "duplicateRules": 0,
+      "rulesBeforeMerge": 49090,
+      "rules": 3864,
       "regexRules": 5,
       "droppedByReason": {
         "$popup has no declarativeNetRequest equivalent": {
@@ -26,7 +26,7 @@
           ]
         },
         "$document page block (abp2dnr does not convert it)": {
-          "count": 556,
+          "count": 554,
           "examples": [
             ".com/smartpop/$document",
             "/?usid=*&utid=$document",
@@ -62,17 +62,17 @@
     {
       "id": "easyprivacy",
       "title": "EasyPrivacy",
-      "version": "202611171037",
-      "sha256": "a89b906ccefcbfceabac7f1b5ff2f670c1e634f2e34f9f5ba7740d3c1f136313",
+      "version": "202611231442",
+      "sha256": "48dc8438d1f932b6fdeee52da83e05e6c6c5d0ab25d5aeb8f3b25b2a49b37672",
       "rulesetPath": "rulesets/easyprivacy.json",
-      "filters": 56683,
-      "comments": 771,
-      "convertedFilters": 56606,
-      "cosmeticFilters": 37,
+      "filters": 56821,
+      "comments": 776,
+      "convertedFilters": 56740,
+      "cosmeticFilters": 41,
       "droppedFilters": 40,
-      "duplicateRules": 3,
-      "rulesBeforeMerge": 56603,
-      "rules": 9218,
+      "duplicateRules": 4,
+      "rulesBeforeMerge": 56736,
+      "rules": 9277,
       "regexRules": 6,
       "droppedByReason": {
         "unsupported option $redirect": {
@@ -132,21 +132,21 @@
     }
   ],
   "cosmetic": {
-    "filters": 24977,
+    "filters": 25044,
     "used": 14141,
-    "skipped": 10836,
+    "skipped": 10903,
     "genericSelectors": 13638,
     "genericSelectorsWithExceptions": 303,
     "exceptionDomains": 481,
     "hidingExceptionPatterns": 189,
     "wildcardExceptionDomainsDropped": 0,
-    "specificFilterDomains": 7967,
+    "specificFilterDomains": 7984,
     "files": 2,
     "contentScripts": 2,
-    "cssBytes": 224536,
+    "cssBytes": 224577,
     "skippedByReason": {
       "site-specific filter (Chrome: needs one content script per domain set, see DESIGN.md; Safari: in the content blocker)": {
-        "count": 10503,
+        "count": 10570,
         "examples": [
           "advfn.com###APS_300_X_600",
           "advfn.com###APS_BILLBOARD",
@@ -185,23 +185,23 @@
     "rulesets": [
       {
         "id": "easylist",
-        "chromeRules": 3851,
-        "rules": 3848,
+        "chromeRules": 3864,
+        "rules": 3861,
         "regexRules": 4,
-        "unchanged": 3290,
-        "changed": 558,
+        "unchanged": 3299,
+        "changed": 562,
         "dropped": 3,
         "changesByReason": {
           "initiatorDomains renamed to domains (the name in Apple's Safari release notes)": {
-            "count": 391,
+            "count": 393,
             "examples": [
-              1436,
-              1437,
-              1494
+              1440,
+              1441,
+              1498
             ]
           },
           "resourceTypes without csp_report, object, webbundle (not resource types in Safari)": {
-            "count": 96,
+            "count": 98,
             "examples": [
               3,
               8,
@@ -229,7 +229,7 @@
             "examples": [
               13,
               156,
-              1273
+              1277
             ]
           },
           "dropped: only matches object, not resource types in Safari": {
@@ -242,84 +242,84 @@
           "regexFilter counted quantifiers expanded (not in Safari's documented regex syntax)": {
             "count": 2,
             "examples": [
-              2731,
-              2773
+              2741,
+              2783
             ]
           },
           "resourceTypes without csp_report (not resource types in Safari)": {
             "count": 2,
             "examples": [
-              948,
-              949
+              951,
+              952
             ]
           },
           "dropped: regexFilter uses alternation, outside Safari's documented regex syntax": {
             "count": 1,
             "examples": [
-              1281
+              1285
             ]
           },
           "resourceTypes without object (not resource types in Safari)": {
             "count": 1,
             "examples": [
-              1274
+              1278
             ]
           }
         }
       },
       {
         "id": "easyprivacy",
-        "chromeRules": 9218,
-        "rules": 9217,
+        "chromeRules": 9277,
+        "rules": 9276,
         "regexRules": 5,
-        "unchanged": 8551,
-        "changed": 666,
+        "unchanged": 8606,
+        "changed": 670,
         "dropped": 1,
         "changesByReason": {
           "initiatorDomains renamed to domains (the name in Apple's Safari release notes)": {
-            "count": 568,
+            "count": 572,
             "examples": [
-              3529,
-              3541,
-              3547
+              3547,
+              3559,
+              3565
             ]
           },
           "excludedInitiatorDomains renamed to excludedDomains (the name in Apple's Safari release notes)": {
             "count": 75,
             "examples": [
               9,
-              168,
-              282
+              169,
+              283
             ]
           },
           "resourceTypes without csp_report, object, webbundle (not resource types in Safari)": {
             "count": 23,
             "examples": [
-              1297,
-              1727,
-              2297
+              1302,
+              1738,
+              2310
             ]
           },
           "regexFilter counted quantifiers expanded (not in Safari's documented regex syntax)": {
             "count": 5,
             "examples": [
-              7300,
-              7301,
-              7302
+              7356,
+              7357,
+              7358
             ]
           },
           "resourceTypes without csp_report (not resource types in Safari)": {
             "count": 3,
             "examples": [
-              3113,
-              3114,
-              3115
+              3131,
+              3132,
+              3133
             ]
           },
           "dropped: regexFilter uses alternation, outside Safari's documented regex syntax": {
             "count": 1,
             "examples": [
-              7303
+              7359
             ]
           }
         }
@@ -334,15 +334,15 @@
       "js": "initiatorDomains renamed to domains in the switch rule"
     },
     "contentBlockerStats": {
-      "rules": 5847,
-      "selectors": 23852,
+      "rules": 5868,
+      "selectors": 23913,
       "genericSelectors": 13638,
       "genericRules": 134,
       "exceptionGroups": 278,
       "exceptionRules": 278,
-      "specificSelectors": 10214,
-      "specificGroups": 5434,
-      "specificRules": 5434,
+      "specificSelectors": 10275,
+      "specificGroups": 5455,
+      "specificRules": 5455,
       "ignoreRules": 1,
       "hidingOffDomains": 188,
       "elemhideOffDomains": 0,
@@ -364,14 +364,14 @@
           "host": "yandex.com"
         }
       ],
-      "bytes": 1215070,
+      "bytes": 1219789,
       "specificFilters": {
-        "filters": 10503,
-        "used": 10214,
-        "skipped": 289,
+        "filters": 10570,
+        "used": 10275,
+        "skipped": 295,
         "skippedByReason": {
           "no domain a domain condition can express (example.* or a single label)": {
-            "count": 242,
+            "count": 244,
             "examples": [
               "sgcarmart##.dealer_banner",
               "ticketmaster##.kOwduY",
@@ -379,7 +379,7 @@
             ]
           },
           "selector not accepted by the validator: expected a selector": {
-            "count": 29,
+            "count": 33,
             "examples": [
               "accuweather.com,acmemarkets.com,aiskillsnavigator.microsoft.com,boston.com,capezio.com,chime.com,costco.com,crunchyroll.com,deezer.com,delta.com,dnb.co.uk,dnb.com,dollargeneral.com,engadget.com,espn.com,eventbrite.com,filson.com,flyfrontier.com,formula1.com,geizhals.de,gladiatorgarageworks.com,harborfreight.com,hopwtr.com,jdsports.com,kkrt.com,lenscrafters.com,livewithkellyandmark.com,madewell.com,mail.yahoo.com,mazdausa.com,michaels.com,milesplit.live,monsterenergy.com,newyorker.com,norton.com,pandora.com,payment.nba.com,porsche.com,qobuz.com,rivals.com,soundcloud.com,spotify.com,subway.com,techcrunch.com,ticketmaster.*,tidal.com,tirerack.com,twitter.com,uber.com,ubereats.com,usaa.com,vimeo.com,visible.com,weather.com,wunderground.com,www.yahoo.com,x.com##+js(set, Navigator.prototype.globalPrivacyControl, false)",
               "accuweather.com,acmemarkets.com,aiskillsnavigator.microsoft.com,boston.com,capezio.com,chime.com,costco.com,crunchyroll.com,deezer.com,delta.com,dnb.co.uk,dnb.com,dollargeneral.com,engadget.com,espn.com,eventbrite.com,filson.com,flyfrontier.com,formula1.com,geizhals.de,gladiatorgarageworks.com,harborfreight.com,hopwtr.com,jdsports.com,kkrt.com,lenscrafters.com,livewithkellyandmark.com,madewell.com,mail.yahoo.com,mazdausa.com,michaels.com,milesplit.live,monsterenergy.com,newyorker.com,norton.com,pandora.com,payment.nba.com,porsche.com,qobuz.com,rivals.com,soundcloud.com,spotify.com,subway.com,techcrunch.com,ticketmaster.*,tidal.com,tirerack.com,twitter.com,uber.com,ubereats.com,usaa.com,vimeo.com,visible.com,weather.com,wunderground.com,www.yahoo.com,x.com##+js(set, navigator.globalPrivacyControl, false)",
@@ -425,7 +425,7 @@
             ]
           }
         },
-        "wildcardDomainsDropped": 343
+        "wildcardDomainsDropped": 345
       }
     }
   }
